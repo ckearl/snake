@@ -6,7 +6,7 @@ import {
 } from './render.js';
 import { THEMES, SKINS, DEFAULT_THEME, DEFAULT_SKIN, THEME_ICONS, shade } from './themes.js';
 import { FRUITS, DEFAULT_FRUIT, BASKET } from './fruits.js';
-import { BUNNY, TURTLE } from './critters.js';
+import { BUNNY, TURTLE, WALL_ICON, PORTAL_ICON, CHEESE_ICON } from './critters.js';
 import { makeFireworks, drawFireworks, drawDizzyStars } from './effects.js';
 import { sfx, isMuted, setMuted } from './sound.js';
 
@@ -308,34 +308,24 @@ function modeIcon(id) {
   return c;
 }
 
+// Classic: a tiny board with a snake heading for a fruit. The other modes are
+// simple pixel sprites: a brick wall, two offset portals, a wedge of cheese.
+const MODE_SPRITES = { wall: WALL_ICON, portal: PORTAL_ICON, cheese: CHEESE_ICON };
 function paintModeIcon(c) {
   const id = c.dataset.modeIcon;
   const ctx = sizeCanvas(c, 45, 45);
+  if (MODE_SPRITES[id]) {
+    drawSprite(ctx, MODE_SPRITES[id], 2, 2, 41);
+    return;
+  }
   const t = THEMES[active.theme];
   const C = 15;
   drawBoard(ctx, 3, 3, C);
   ctx.strokeStyle = t.margins;
   ctx.lineWidth = 2;
   ctx.strokeRect(1, 1, 43, 43);
-  const snake = { dir: 'right', shadow: false };
-  if (id === 'wall') {
-    // Snake heading for a wall block.
-    drawWall(ctx, 2, 1, C);
-    drawSnake(ctx, [{ x: 1, y: 1 }, { x: 0, y: 1 }, { x: 0, y: 2 }], C, snake);
-  } else if (id === 'portal') {
-    // A matched pair: same ring colour, same fruit, at opposite corners.
-    for (const [x, y] of [[0, 0], [2, 2]]) {
-      drawPortal(ctx, x, y, C, portalColor(1), 0);
-      drawFruit(ctx, iconFruit(0), x * C + 2, y * C + 2, C - 4);
-    }
-    drawSnake(ctx, [{ x: 1, y: 0 }, { x: 2, y: 0 }, { x: 2, y: 1 }], C, { ...snake, dir: 'left' });
-  } else if (id === 'cheese') {
-    // A longer snake with holes in its body.
-    drawSnake(ctx, [{ x: 2, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }, { x: 2, y: 1 }, { x: 2, y: 2 }, { x: 1, y: 2 }], C, { ...snake, holes: true });
-  } else {
-    drawFruit(ctx, iconFruit(0), 31, 16, 13);
-    drawSnake(ctx, [{ x: 1, y: 1 }, { x: 0, y: 1 }, { x: 0, y: 2 }], C, snake);
-  }
+  drawFruit(ctx, iconFruit(0), 31, 16, 13);
+  drawSnake(ctx, [{ x: 1, y: 1 }, { x: 0, y: 1 }, { x: 0, y: 2 }], C, { dir: 'right', shadow: false });
 }
 
 // Fruit to show in icons: the chosen one, or a varied set when mixed.
