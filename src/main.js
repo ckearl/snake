@@ -33,6 +33,7 @@ const el = {
   scene: $('scene'),
   fullscreen: $('btn-fullscreen'),
   mute: $('btn-mute'),
+  timer: $('timer'),
 };
 
 // ---------- persistence ----------
@@ -56,11 +57,15 @@ let acc = 0;
 let lastTime = 0;
 const foodBorn = new Map(); // "x,y" -> time the fruit appeared (for pop-in)
 let deathTimer = null;
+let elapsedMs = 0; // stopwatch: time spent with the snake actually moving
+let timerText = '';
 
 function newGame() {
   const { cols, rows } = BOARD_SIZES[sizeKey];
   game = createGame({ cols, rows, fruitCount: FRUIT_COUNTS[prefs.count] });
   foodBorn.clear();
+  elapsedMs = 0;
+  updateTimer();
   acc = 0;
   updateScore();
   fitBoard();
@@ -469,11 +474,40 @@ function drawMenuScene(t) {
 }
 
 // ---------- loop ----------
+function formatTime(ms) {
+  const tenths = Math.floor(ms / 100);
+  const m = Math.floor(tenths / 600);
+  const s = Math.floor(tenths / 10) % 60;
+  return `${m}:${String(s).padStart(2, '0')}.${tenths % 10}`;
+}
+
+function updateTimer() {
+  const text = formatTime(elapsedMs);
+  if (text !== timerText) el.timer.textContent = timerText = text;
+}
+
+function toggleTimer() {
+  el.timer.hidden = !el.timer.hidden;
+}
+
+function toggleMute() {
+  setMuted(!isMuted());
+  el.mute.classList.toggle('on', isMuted());
+}
+
+function toggleFullscreen() {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen?.();
+}
+
 function frame(t) {
-  const dt = Math.min(t - lastTime, 250);
+  const realDt = t - lastTime;
+  const dt = Math.min(realDt, 250);
   lastTime = t;
 
   if (game && game.status === 'running') {
+    elapsedMs += realDt;
+    updateTimer();
     acc += dt;
     while (acc >= TICK_MS && game.status === 'running') {
       acc -= TICK_MS;
@@ -510,6 +544,13 @@ function resume() {
 
 // ---------- input ----------
 window.addEventListener('keydown', (e) => {
+  // Global hotkeys (any screen). Skip when a modifier is held so Cmd+F etc. still work.
+  if (!e.metaKey && !e.ctrlKey && !e.altKey && !e.repeat) {
+    if (e.code === 'KeyT') { toggleTimer(); return; }
+    if (e.code === 'KeyM') { toggleMute(); return; }
+    if (e.code === 'KeyF') { toggleFullscreen(); return; }
+  }
+
   if (screen === 'settings') {
     if (e.code === 'Escape') showScreen('menu');
     return;
@@ -557,15 +598,9 @@ $('btn-close').addEventListener('click', () => {
   else if (screen === 'play') toMenu();
 });
 
-el.mute.addEventListener('click', () => {
-  setMuted(!isMuted());
-  el.mute.classList.toggle('on', isMuted());
-});
+el.mute.addEventListener('click', toggleMute);
 
-el.fullscreen.addEventListener('click', () => {
-  if (document.fullscreenElement) document.exitFullscreen();
-  else document.documentElement.requestFullscreen?.();
-});
+el.fullscreen.addEventListener('click', toggleFullscreen);
 document.addEventListener('fullscreenchange', () => {
   el.fullscreen.classList.toggle('on', !!document.fullscreenElement);
 });
