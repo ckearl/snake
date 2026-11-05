@@ -12,6 +12,14 @@ Must be served over HTTP (not opened via `file://`) because it uses ES modules.
 **Controls:** Arrows / WASD to move · Space or P to pause · Esc for menu · T show/hide stopwatch · M mute · F fullscreen. Settings is seven draggable icon strips, in order: fruit (or the basket = mixed, every fruit a random kind), game mode, fruit count, speed, board size, snake color, board color. A **?** at the end of game mode / fruit count / snake color / board color re-rolls that choice every round; the icon in the centre frame is the active choice. Click an icon or use arrow keys too. All saved.
 Top bar: fullscreen, mute, and close (back to menu).
 
+**Game modes:**
+- **Classic** — plain snake.
+- **Walls** — every 2nd fruit eaten drops a wall block on a free square (never right in front of you). Hit it and you die.
+- **Portals** — fruits come in matched pairs (each pair a different fruit, with a coloured ring). Eat one end and your head pops out of the other; the body follows through. Fruit count = number of pairs.
+- **Cheese** — every other body segment is a hole. You can pass through your own body if you hit a hole.
+
+The shuffle button at the bottom of Settings randomises every row.
+
 **Board sizes (cols × rows):** Small 10×9 · Medium 17×15 · Large 24×21
 
 **Speed:** 135 ms per tile × multiplier — turtle 1.33 (180 ms), snake 1 (135 ms), bunny 0.67 (90 ms). Movement is smoothly interpolated between tiles.
@@ -25,6 +33,7 @@ Top bar: fullscreen, mute, and close (back to menu).
 - `src/render.js` — canvas drawing: board, snake, orange/crown sprites, menu scene.
 - `src/sound.js` — WebAudio blips (eat / die / start / win jingle), mute persisted.
 - `src/effects.js` — win fireworks and dizzy stars for the loss bonk.
+- Tests: `test/game.test.js` (rules), `test/modes.test.js` (walls/portals/cheese), `test/render.test.js` (smooth movement).
 - `src/main.js` — screens (menu, settings, play), input, game loop, layout.
 - `style.css` — layout and UI styling.
 

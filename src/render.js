@@ -8,13 +8,14 @@ export const PALETTE = {
   shadow: 'rgba(0, 0, 0, 0.18)',
   skyTop: '#275BA5',
   skyBottom: '#7E9FD8',
+  wall: '#275BA5',
   eyeWhite: '#FFFFFF',
   pupil: '#1B1238',
   tongue: '#E8364F',
 };
 
-export function setBoardColors({ light, dark, skyTop, skyBottom }) {
-  Object.assign(PALETTE, { cellA: light, cellB: dark, skyTop, skyBottom });
+export function setBoardColors({ light, dark, skyTop, skyBottom, wall = skyTop }) {
+  Object.assign(PALETTE, { cellA: light, cellB: dark, skyTop, skyBottom, wall });
 }
 
 let currentSkin = SKINS[DEFAULT_SKIN];
@@ -114,6 +115,55 @@ export function drawBoard(ctx, cols, rows, cell) {
   }
 }
 
+// ---------- obstacles ----------
+// Wall-mode block: same colour as the board's border walls, with a bevel.
+export function drawWall(ctx, x, y, cell, scale = 1) {
+  const size = cell * scale;
+  const px = Math.round(x * cell + (cell - size) / 2);
+  const py = Math.round(y * cell + (cell - size) / 2);
+  const s = Math.round(size);
+  const b = Math.max(2, Math.round(size * 0.12));
+  ctx.fillStyle = PALETTE.shadow;
+  ctx.fillRect(px, py + Math.max(2, Math.round(cell * 0.08)), s, s);
+  ctx.fillStyle = shade(PALETTE.wall, -0.3);
+  ctx.fillRect(px, py, s, s);
+  ctx.fillStyle = shade(PALETTE.wall, 0.18);
+  ctx.fillRect(px, py, s, s - b);
+  ctx.fillStyle = PALETTE.wall;
+  ctx.fillRect(px + b, py + b, s - b * 2, s - b * 3);
+}
+
+// Portal: a pixel ring with sparks orbiting it. (x, y) is the cell.
+const PORTAL_COLORS = ['#B46CFF', '#3FD9C9', '#FF8A3D', '#FF5FA2', '#5B8CFF', '#FFD34D', '#7BE05A'];
+export const portalColor = (pair) => PORTAL_COLORS[pair % PORTAL_COLORS.length];
+
+export function drawPortal(ctx, x, y, cell, color, ms, { faint = false } = {}) {
+  const cx = (x + 0.5) * cell;
+  const cy = (y + 0.5) * cell;
+  const u = Math.max(1, Math.round(cell / 14));
+  const r = cell * 0.42;
+  ctx.globalAlpha = faint ? 0.55 : 1;
+  // Ring made of square pixels around the centre.
+  ctx.fillStyle = shade(color, -0.35);
+  const steps = 20;
+  for (let k = 0; k < steps; k++) {
+    const a = (k / steps) * Math.PI * 2;
+    ctx.fillRect(Math.round(cx + Math.cos(a) * r) - u, Math.round(cy + Math.sin(a) * r * 0.8) - u, u * 2, u * 2);
+  }
+  ctx.fillStyle = color;
+  for (let k = 0; k < steps; k++) {
+    const a = (k / steps) * Math.PI * 2;
+    ctx.fillRect(Math.round(cx + Math.cos(a) * r * 0.8) - u, Math.round(cy + Math.sin(a) * r * 0.64) - u, u * 2, u * 2);
+  }
+  // Two sparks orbiting.
+  ctx.fillStyle = '#FFFFFF';
+  for (const off of [0, Math.PI]) {
+    const a = ms / 260 + off;
+    ctx.fillRect(Math.round(cx + Math.cos(a) * r) - u, Math.round(cy + Math.sin(a) * r * 0.8) - u, u * 2, u * 2);
+  }
+  ctx.globalAlpha = 1;
+}
+
 // ---------- snake ----------
 // The snake is drawn as a thick axis-aligned polyline through cell centres
 // (points in cell units, e.g. {x: 3.5, y: 2.5}). Points may be fractional,
@@ -128,9 +178,10 @@ const centre = (c) => ({ x: c.x + 0.5, y: c.y + 0.5 });
 const dist = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y); // axis-aligned
 
 // Static snake from grid cells (menu scene, icons, ready/game-over states).
+// opts.jumps: open portals, so the body can be drawn going in one and out the other.
 export function drawSnake(ctx, cells, cell, opts = {}) {
   if (!cells.length) return;
-  const pts = cells.map(centre);
+  const pts = withPortalBreaks(cells, opts.jumps);
   if (opts.biteTail && cells.length > 2) {
     // Run the tail right up to the head's edge so the loop closes.
     const h = pts[0];
@@ -143,17 +194,59 @@ export function drawSnake(ctx, cells, cell, opts = {}) {
   }
 }
 
+const isAdj = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y) === 1;
+const sameCell = (a, b) => a.x === b.x && a.y === b.y;
+const lerpPt = (a, b, k) => ({ x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k });
+
+// Find the portal a body link (ahead -> behind) goes through, if any.
+function portalBetween(ahead, behind, jumps = []) {
+  return jumps.find((j) => sameCell(j.to, ahead) && isAdj(j.from, behind));
+}
+
+// Cell centres head→tail, with a `null` break wherever the body goes through a
+// portal: the part behind the break starts at the entry portal's centre.
+export const snakePoints = (cells, jumps) => withPortalBreaks(cells, jumps);
+function withPortalBreaks(cells, jumps, startAt = 0) {
+  const pts = [];
+  for (let i = startAt; i < cells.length; i++) {
+    pts.push(centre(cells[i]));
+    const nxt = cells[i + 1];
+    if (nxt && !isAdj(cells[i], nxt)) {
+      pts.push(null);
+      const j = portalBetween(cells[i], nxt, jumps);
+      if (j) pts.push(centre(j.from));
+    }
+  }
+  return pts;
+}
+
 // Path for a snake partway (alpha 0..1) through a move from P (before) to S (after).
 // Body cells stay put; the head slides from the previous head cell into the new
-// one and the tail slides out of the cell it just left.
-export function interpolateSnake(S, P, alpha) {
-  const c = (q) => ({ x: q.x + 0.5, y: q.y + 0.5 });
-  const lerp = (a, b, k) => ({ x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k });
-  const pts = [S.length > 1 ? lerp(c(S[1]), c(S[0]), alpha) : c(S[0])];
-  for (let i = 1; i < S.length; i++) pts.push(c(S[i]));
+// one and the tail slides out of the cell it just left. Through a portal, the
+// head pops out of the exit while the neck slides into the entry.
+export function interpolateSnake(S, P, alpha, jumps = []) {
+  const c = centre;
+  let pts;
+  if (S.length > 1 && !isAdj(S[0], S[1])) {
+    // Teleported this tick: head at the exit, neck sliding into the entry.
+    const j = portalBetween(S[0], S[1], jumps);
+    pts = [c(S[0]), null];
+    if (j) pts.push(lerpPt(c(S[1]), c(j.from), alpha));
+    pts.push(...withPortalBreaks(S, jumps, 1));
+  } else {
+    pts = [S.length > 1 ? lerpPt(c(S[1]), c(S[0]), alpha) : c(S[0]), ...withPortalBreaks(S, jumps, 1)];
+  }
   const from = P[P.length - 1];
   const to = S[S.length - 1];
-  if (from.x !== to.x || from.y !== to.y) pts.push(lerp(c(from), c(to), alpha));
+  if (!sameCell(from, to)) {
+    if (isAdj(from, to)) {
+      pts.push(lerpPt(c(from), c(to), alpha));
+    } else {
+      // The tail just went through a portal: a stub still sliding into the entry.
+      const j = jumps.find((q) => sameCell(q.to, to) && isAdj(q.from, from));
+      if (j) pts.push(null, c(j.from), lerpPt(c(j.from), c(from), 1 - alpha));
+    }
+  }
   return pts;
 }
 
@@ -212,19 +305,31 @@ function tubeRect(ctx, a, b, w, capA, capB, cell, ox = 0, oy = 0) {
 // eyes: 'normal' | 'closed' | 'dizzy' (pupils spin) | 'happy' (^ ^). ms drives the spin.
 export function drawSnakePath(ctx, rawPts, cell, {
   dir = 'right', dead = false, eyes = dead ? 'closed' : 'normal', ms = 0,
-  tongue = false, skin = null, shadow = true,
+  tongue = false, skin = null, shadow = true, holes = false,
 } = {}) {
-  const pts = rawPts.filter((p, i) => i === 0 || dist(p, rawPts[i - 1]) > 1e-6);
-  if (!pts.length) return;
+  // Split into runs at null breaks (portals), dropping zero-length steps.
+  const runs = [];
+  let cur = [];
+  for (const p of rawPts) {
+    if (p === null) {
+      if (cur.length) runs.push(cur);
+      cur = [];
+    } else if (!cur.length || dist(p, cur[cur.length - 1]) > 1e-6) {
+      cur.push(p);
+    }
+  }
+  if (cur.length) runs.push(cur);
+  if (!runs.length) return;
+
   const sk = skin ?? currentSkin;
-  const L = pathLength(pts);
+  const lens = runs.map(pathLength);
+  const L = lens.reduce((a, b) => a + b, 0);
   const colorAt = (d) => skinColor(sk, L > 0 ? d / L : 0);
   const border = Math.max(2, Math.round(cell * 0.08));
   const wide = BODY_W * cell;
   const thin = TAIL_W * cell;
-  const split = Math.max(0, L - TAIL_LEN);
 
-  // Pieces of the tube: [a, b, width, capA, capB, colour-distance]
+  // Pieces of the tube: { a, b, w, capA, capB, mid (colour distance) }
   const pieces = [];
   const addRun = (run, w, d0, capStart, capEnd) => {
     let d = d0;
@@ -242,11 +347,33 @@ export function drawSnakePath(ctx, rawPts, cell, {
       d += len;
     }
   };
-  addRun(subPath(pts, 0, split), wide, 0, wide / 2, 0);
-  addRun(subPath(pts, split, L), thin, split, thin / 2, thin / 2);
+  // Runs meet portals with flat (uncapped) ends; the very first run starts under
+  // the head and the last run tapers into the tail.
+  let off = 0;
+  runs.forEach((run, r) => {
+    const start = r === 0 ? wide / 2 : 0;
+    if (r === runs.length - 1) {
+      const split = Math.max(0, lens[r] - TAIL_LEN);
+      addRun(subPath(run, 0, split), wide, off, start, 0);
+      addRun(subPath(run, split, lens[r]), thin, off + split, split > 0 ? thin / 2 : start, thin / 2);
+    } else {
+      addRun(run, wide, off, start, 0);
+    }
+    off += lens[r];
+  });
+
+  // A point `d` along the whole body (across portal breaks), or null.
+  const pointAt = (d) => {
+    let o = 0;
+    for (let r = 0; r < runs.length; r++) {
+      if (d <= o + lens[r] && lens[r] > 0) return subPath(runs[r], d - o, d - o)[0];
+      o += lens[r];
+    }
+    return null;
+  };
 
   // Head: a slightly larger square riding on the front of the tube.
-  const h = pts[0];
+  const h = runs[0][0];
   const hs = HEAD_SIZE * cell;
   const hx = Math.round(h.x * cell - hs / 2);
   const hy = Math.round(h.y * cell - hs / 2);
@@ -265,6 +392,23 @@ export function drawSnakePath(ctx, rawPts, cell, {
   for (const p of pieces) {
     ctx.fillStyle = colorAt(p.mid);
     tubeRect(ctx, p.a, p.b, p.w - border * 2, Math.max(0, p.capA - border), Math.max(0, p.capB - border), cell);
+  }
+
+  // Cheese mode: every other segment (2, 4, 6… from the head) is a hole that
+  // slides down the body with the head, showing the board through it.
+  if (holes) {
+    const hs2 = Math.round(cell * 0.5);
+    const rim = Math.max(1, Math.round(cell * 0.06));
+    for (let d = 2; d < L - 0.4; d += 2) {
+      const q = pointAt(d);
+      if (!q) continue;
+      const x = Math.round(q.x * cell - hs2 / 2);
+      const y = Math.round(q.y * cell - hs2 / 2);
+      ctx.fillStyle = shade(colorAt(d), -0.42);
+      ctx.fillRect(x - rim, y - rim, hs2 + rim * 2, hs2 + rim * 2);
+      ctx.fillStyle = PALETTE.cellA;
+      ctx.fillRect(x, y, hs2, hs2);
+    }
   }
 
   const headCol = colorAt(0);

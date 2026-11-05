@@ -148,8 +148,9 @@ svg .fill { fill: currentColor; stroke: none; }
 
 /* ---------- menus ---------- */
 .overlay {
-  position: absolute;
+  position: fixed; /* use the whole window so tall menus (Settings) always fit */
   inset: 0;
+  z-index: 10;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   place-items: center;
@@ -221,10 +222,10 @@ svg .fill { fill: currentColor; stroke: none; }
 
 .panel.wide { width: min(460px, 100%); }
 
-.settings-card { padding: 16px 0; }
+.settings-card { padding: 10px 0; }
 
 .setting { position: relative; }
-.setting + .setting { margin-top: 10px; }
+.setting + .setting { margin-top: 2px; }
 
 /* The centre frame: whatever icon rests here is the chosen value. */
 .setting::after {
@@ -232,8 +233,8 @@ svg .fill { fill: currentColor; stroke: none; }
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 74px;
-  height: 74px;
+  width: 70px;
+  height: 70px;
   transform: translate(-50%, -50%);
   border: 3px solid var(--accent);
   border-radius: 16px;
@@ -244,7 +245,7 @@ svg .fill { fill: currentColor; stroke: none; }
   position: relative;
   display: flex;
   gap: 10px;
-  padding: 10px calc(50% - 30px);
+  padding: 7px calc(50% - 30px);
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
@@ -288,3 +289,8 @@ svg .fill { fill: currentColor; stroke: none; }
   text-shadow: 0 3px 0 rgba(0, 0, 0, 0.3);
   pointer-events: none;
 }
+
+/* Settings footer: shuffle + done */
+.settings-actions { display: flex; gap: 12px; }
+.settings-actions .btn { flex: 1; }
+.settings-actions .btn.shuffle { flex: 0 0 76px; }

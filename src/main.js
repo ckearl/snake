@@ -2,7 +2,7 @@ import {
   BOARD_SIZES, FRUIT_COUNTS, SPEEDS, GAME_MODES, BASE_TICK_MS, createGame, queueTurn, step,
 } from './game.js';
 import {
-  sizeCanvas, drawBoard, drawSnake, drawSnakePath, interpolateSnake, drawFruit, drawSprite, drawCrown, drawScene, setBoardColors, setSnakeSkin,
+  sizeCanvas, drawBoard, drawSnake, drawSnakePath, interpolateSnake, snakePoints, drawWall, drawPortal, portalColor, drawFruit, drawSprite, drawCrown, drawScene, setBoardColors, setSnakeSkin,
 } from './render.js';
 import { THEMES, SKINS, DEFAULT_THEME, DEFAULT_SKIN, THEME_ICONS, shade } from './themes.js';
 import { FRUITS, DEFAULT_FRUIT, BASKET } from './fruits.js';
@@ -61,6 +61,8 @@ let sceneCtx = null;
 let sceneFruit = DEFAULT_FRUIT; // fruit in the menu picture (varies when mixed)
 let acc = 0;
 let lastTime = 0;
+const wallBorn = new Map(); // "x,y" -> time the wall appeared (for pop-in)
+const pairKinds = new Map(); // portal pair id -> fruit kind (distinct per pair on the board)
 const foodBorn = new Map(); // "x,y" -> time the fruit appeared (for pop-in)
 let deathTimer = null;
 let prevSnake = null; // snake before the latest step (for smooth interpolation)
@@ -71,8 +73,10 @@ let timerText = '';
 
 function newGame() {
   const { cols, rows } = BOARD_SIZES[sizeKey];
-  game = createGame({ cols, rows, fruitCount: FRUIT_COUNTS[active.count] });
+  game = createGame({ cols, rows, fruitCount: FRUIT_COUNTS[active.count], mode: active.mode });
   foodBorn.clear();
+  wallBorn.clear();
+  pairKinds.clear();
   prevSnake = null;
   eaten = null;
   endFx = null;
@@ -186,9 +190,25 @@ const randomFruit = () => {
 };
 // Fruit kind for a board fruit: fixed choice, or the fruit's own rolled kind when mixed.
 function fruitKind(f) {
+  if (f.pair) return pairKind(f.pair);
   if (prefs.fruit !== MIXED) return prefs.fruit;
   if (!f.kind) f.kind = randomFruit();
   return f.kind;
+}
+
+// Portal twins share a fruit; every pair on the board gets a different one so you
+// can tell which ends connect. The chosen fruit is used first when it's free.
+function pairKind(pair) {
+  if (pairKinds.has(pair)) return pairKinds.get(pair);
+  const live = new Set(game.foods.map((f) => f.pair));
+  const used = new Set([...pairKinds].filter(([p]) => live.has(p)).map(([, k]) => k));
+  let kind = prefs.fruit !== MIXED && !used.has(prefs.fruit) ? prefs.fruit : null;
+  if (!kind) {
+    const free = Object.keys(FRUITS).filter((k) => !used.has(k));
+    kind = free.length ? free[Math.floor(Math.random() * free.length)] : randomFruit();
+  }
+  pairKinds.set(pair, kind);
+  return kind;
 }
 
 const tickMs = () => BASE_TICK_MS * SPEEDS[prefs.speed];
@@ -289,14 +309,33 @@ function modeIcon(id) {
 }
 
 function paintModeIcon(c) {
+  const id = c.dataset.modeIcon;
   const ctx = sizeCanvas(c, 45, 45);
   const t = THEMES[active.theme];
-  drawBoard(ctx, 3, 3, 15);
+  const C = 15;
+  drawBoard(ctx, 3, 3, C);
   ctx.strokeStyle = t.margins;
   ctx.lineWidth = 2;
   ctx.strokeRect(1, 1, 43, 43);
-  drawFruit(ctx, iconFruit(0), 31, 16, 13);
-  drawSnake(ctx, [{ x: 1, y: 1 }, { x: 0, y: 1 }, { x: 0, y: 2 }], 15, { dir: 'right', shadow: false });
+  const snake = { dir: 'right', shadow: false };
+  if (id === 'wall') {
+    // Snake heading for a wall block.
+    drawWall(ctx, 2, 1, C);
+    drawSnake(ctx, [{ x: 1, y: 1 }, { x: 0, y: 1 }, { x: 0, y: 2 }], C, snake);
+  } else if (id === 'portal') {
+    // A matched pair: same ring colour, same fruit, at opposite corners.
+    for (const [x, y] of [[0, 0], [2, 2]]) {
+      drawPortal(ctx, x, y, C, portalColor(1), 0);
+      drawFruit(ctx, iconFruit(0), x * C + 2, y * C + 2, C - 4);
+    }
+    drawSnake(ctx, [{ x: 1, y: 0 }, { x: 2, y: 0 }, { x: 2, y: 1 }], C, { ...snake, dir: 'left' });
+  } else if (id === 'cheese') {
+    // A longer snake with holes in its body.
+    drawSnake(ctx, [{ x: 2, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }, { x: 2, y: 1 }, { x: 2, y: 2 }, { x: 1, y: 2 }], C, { ...snake, holes: true });
+  } else {
+    drawFruit(ctx, iconFruit(0), 31, 16, 13);
+    drawSnake(ctx, [{ x: 1, y: 1 }, { x: 0, y: 1 }, { x: 0, y: 2 }], C, snake);
+  }
 }
 
 // Fruit to show in icons: the chosen one, or a varied set when mixed.
@@ -559,7 +598,7 @@ function applyTheme() {
   css.setProperty('--btn', shade(t.margins, 0.15));
   css.setProperty('--btn-hover', shade(t.margins, 0.25));
   css.setProperty('--btn-edge', shade(t.topBar, -0.25));
-  setBoardColors({ light: t.light, dark: t.dark, skyTop: t.margins, skyBottom: shade(t.margins, 0.4) });
+  setBoardColors({ light: t.light, dark: t.dark, skyTop: t.margins, skyBottom: shade(t.margins, 0.4), wall: t.margins });
 }
 
 function applySkin() {
@@ -587,6 +626,23 @@ function drawGame(t) {
   const ctx = boardCtx;
   drawBoard(ctx, game.cols, game.rows, cell);
 
+  // Wall blocks (wall mode), popping in when they appear.
+  for (const w of game.walls) {
+    const key = `${w.x},${w.y}`;
+    if (!wallBorn.has(key)) wallBorn.set(key, t);
+    const p = Math.min(1, (t - wallBorn.get(key)) / 220);
+    drawWall(ctx, w.x, w.y, cell, p < 1 ? 0.3 + 0.85 * p - 0.15 * p * p : 1);
+  }
+
+  // Open portals (body passing through) and faint rings under portal fruits.
+  for (const j of game.jumps) {
+    drawPortal(ctx, j.from.x, j.from.y, cell, portalColor(j.pair), t);
+    drawPortal(ctx, j.to.x, j.to.y, cell, portalColor(j.pair), t);
+  }
+  for (const f of game.foods) {
+    if (f.pair) drawPortal(ctx, f.x, f.y, cell, portalColor(f.pair), t, { faint: true });
+  }
+
   const onBoard = new Set();
   for (const f of game.foods) {
     const key = `${f.x},${f.y}`;
@@ -613,7 +669,9 @@ function drawGame(t) {
   }
 
   const live = game.status === 'running' || game.status === 'ready';
-  const opts = { dir: game.dir, tongue: live && tongueOut(t), ms: t };
+  const opts = {
+    dir: game.dir, tongue: live && tongueOut(t), ms: t, jumps: game.jumps, holes: game.mode === 'cheese',
+  };
 
   if (game.status === 'over' && endFx?.type === 'lose') {
     drawBonk(ctx, t - endFx.t0, opts);
@@ -621,7 +679,7 @@ function drawGame(t) {
     drawSnake(ctx, game.snake, cell, { ...opts, eyes: 'happy' });
     drawFireworks(ctx, endFx.fireworks, t - endFx.t0, cell);
   } else if (alpha < 1) {
-    drawSnakePath(ctx, interpolateSnake(game.snake, prevSnake, alpha), cell, opts);
+    drawSnakePath(ctx, interpolateSnake(game.snake, prevSnake, alpha, game.jumps), cell, opts);
   } else {
     drawSnake(ctx, game.snake, cell, opts);
   }
@@ -632,7 +690,7 @@ function drawGame(t) {
 function drawBonk(ctx, ms, opts) {
   const [dx, dy] = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[game.dir];
   const bump = ms < BONK_MS ? Math.sin((Math.PI * ms) / BONK_MS) * 0.2 : 0;
-  const pts = game.snake.map((q) => ({ x: q.x + 0.5, y: q.y + 0.5 }));
+  const pts = snakePoints(game.snake, game.jumps);
   const head = { x: pts[0].x + dx * bump, y: pts[0].y + dy * bump };
   drawSnakePath(ctx, [head, ...pts], cell, { ...opts, eyes: ms > BONK_MS * 0.6 ? 'dizzy' : 'closed' });
   if (ms > BONK_MS * 0.6) {
@@ -649,15 +707,19 @@ function drawBonk(ctx, ms, opts) {
 function doStep() {
   prevSnake = game.snake.map((q) => ({ ...q }));
   const before = game.foods.slice();
+  const wallsBefore = game.walls.length;
   const ev = step(game);
-  if (ev === 'eat' || ev === 'win') {
-    const h = game.snake[0];
-    const f = before.find((q) => q.x === h.x && q.y === h.y);
-    eaten = { x: h.x, y: h.y, kind: f ? fruitKind(f) : prefs.fruit };
+  if (ev === 'eat' || ev === 'win' || ev === 'portal') {
+    // Through a portal, the fruit eaten is the entry end (the head already left it).
+    const at = ev === 'portal' ? game.jumps[game.jumps.length - 1].from : game.snake[0];
+    const f = before.find((q) => q.x === at.x && q.y === at.y);
+    eaten = { x: at.x, y: at.y, kind: f ? fruitKind(f) : prefs.fruit };
   } else {
     eaten = null;
   }
   if (ev === 'eat') { sfx.eat(); updateScore(); }
+  if (ev === 'portal') { sfx.portal(); updateScore(); }
+  if (game.walls.length > wallsBefore) sfx.wall();
   if (ev === 'die' || ev === 'win') onGameEnd(ev);
 }
 
@@ -800,6 +862,14 @@ window.addEventListener('resize', fitBoard);
 $('btn-play').addEventListener('click', play);
 $('btn-settings').addEventListener('click', () => showScreen('settings'));
 $('btn-back').addEventListener('click', () => showScreen('menu'));
+
+// Shuffle: every row jumps to a random concrete option ("?" and the current pick excluded).
+$('btn-shuffle').addEventListener('click', () => {
+  for (const s of SETTINGS) {
+    const ids = Object.keys(s.options).filter((id) => id !== SURPRISE && id !== prefs[s.key]);
+    if (ids.length) choose(s, ids[Math.floor(Math.random() * ids.length)]);
+  }
+});
 $('btn-close').addEventListener('click', () => {
   if (screen === 'settings') showScreen('menu');
   else if (screen === 'play') toMenu();

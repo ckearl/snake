@@ -45,6 +45,17 @@ export const sfx = {
     tone(2093, t + 0.27, 0.32, { vol: 0.04 });
     tone(1047, t + 0.27, 0.32, { type: 'triangle', vol: 0.05 });
   },
+  // Portal: a quick warbling rise.
+  portal() {
+    if (muted) return;
+    tone(330, 0, 0.16, { type: 'triangle', vol: 0.07, to: 1320 });
+    tone(660, 0.05, 0.12, { vol: 0.025, to: 1760 });
+  },
+  // Wall drops in: a short low thunk.
+  wall() {
+    if (muted) return;
+    tone(150, 0, 0.09, { type: 'triangle', vol: 0.09, to: 70 });
+  },
   start() {
     if (muted) return;
     tone(523, 0, 0.07);
