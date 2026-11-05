@@ -1,5 +1,5 @@
 import {
-  BOARD_SIZES, FRUIT_COUNTS, SPEEDS, GAME_MODES, BASE_TICK_MS, createGame, queueTurn, step,
+  BOARD_SIZES, FRUIT_COUNTS, SPEEDS, GAME_MODES, BASE_TICK_MS, createGame, queueTurn, step, redirectExit,
 } from './game.js';
 import {
   sizeCanvas, drawBoard, drawSnake, drawSnakePath, interpolateSnake, snakePoints, drawWall, drawFruit, drawSprite, drawCrown, drawScene, setBoardColors, setSnakeSkin,
@@ -67,7 +67,8 @@ const foodBorn = new Map(); // "x,y" -> time the fruit appeared (for pop-in)
 let deathTimer = null;
 let prevSnake = null; // snake before the latest step (for smooth interpolation)
 let endFx = null; // { type: 'lose' | 'win', t0, fireworks? }
-let eaten = null; // fruit eaten on the latest step, shrinks as the head arrives
+let eaten = null;
+let portalFruits = null; // { kind, from, to } – the pair just entered, shown until the head reaches it // fruit eaten on the latest step, shrinks as the head arrives
 let elapsedMs = 0; // stopwatch: time spent with the snake actually moving
 let timerText = '';
 
@@ -79,6 +80,7 @@ function newGame() {
   pairKinds.clear();
   prevSnake = null;
   eaten = null;
+  portalFruits = null;
   endFx = null;
   elapsedMs = 0;
   updateTimer();
@@ -624,14 +626,6 @@ function drawGame(t) {
     drawWall(ctx, w.x, w.y, cell, p < 1 ? 0.3 + 0.85 * p - 0.15 * p * p : 1);
   }
 
-  // Portals in use: the pair's two fruits stay put as the portal ends until the
-  // tail has passed through.
-  for (const j of game.jumps) {
-    const kind = pairKind(j.pair);
-    for (const end of [j.from, j.to]) {
-      drawFruit(ctx, kind, end.x * cell + cell * 0.05, end.y * cell + cell * 0.02, cell * 0.9, { shadow: true });
-    }
-  }
 
   const onBoard = new Set();
   for (const f of game.foods) {
@@ -651,6 +645,14 @@ function drawGame(t) {
   // How far through the current tile the snake is (0..1). Paused keeps its place.
   const moving = game.status === 'running' || game.status === 'paused';
   const alpha = moving && prevSnake ? Math.min(1, acc / tickMs()) : 1;
+
+  // Portal pair just entered: both fruits stay until the head reaches the entry,
+  // then vanish together as it goes through.
+  if (portalFruits && alpha < 1) {
+    for (const end of [portalFruits.from, portalFruits.to]) {
+      drawFruit(ctx, portalFruits.kind, end.x * cell + cell * 0.05, end.y * cell + cell * 0.02, cell * 0.9, { shadow: true });
+    }
+  }
 
   // The fruit just eaten shrinks away as the head slides onto it.
   if (eaten && alpha < 1) {
@@ -704,8 +706,12 @@ function doStep() {
     const f = before.find((q) => q.x === at.x && q.y === at.y);
     eaten = { x: at.x, y: at.y, kind: f ? fruitKind(f) : prefs.fruit };
   } else {
-    // (Portal fruits don't shrink away: they stay as the portal ends.)
     eaten = null;
+  }
+  portalFruits = null;
+  if (ev === 'portal') {
+    const j = game.jumps[game.jumps.length - 1];
+    portalFruits = { kind: pairKind(j.pair), from: j.from, to: j.to };
   }
   if (ev === 'eat') { sfx.eat(); updateScore(); }
   if (ev === 'portal') { sfx.portal(); updateScore(); }
@@ -824,6 +830,8 @@ window.addEventListener('keydown', (e) => {
       sfx.start();
       start();
     } else if (game.status === 'running') {
+      // Just popped out of a portal? Early in that move, a turn re-aims it.
+      if (game.leftExit && acc / tickMs() < 0.5 && redirectExit(game, dir)) return;
       queueTurn(game, dir);
     }
     return;

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createGame, step, queueTurn, spawnWall, placeFood, keepsBoardOpen } from '../src/game.js';
+import { createGame, step, queueTurn, spawnWall, placeFood, keepsBoardOpen, redirectExit } from '../src/game.js';
 
 const at = (list, p) => list.some((s) => s.x === p.x && s.y === p.y);
 
@@ -145,4 +145,38 @@ test('classic mode: any body segment is solid', () => {
   g.foods = [{ x: 0, y: 0 }];
   queueTurn(g, 'up');
   assert.equal(step(g), 'die');
+});
+
+test('portal mode: a turn pressed while going in steers the way out', () => {
+  const g = running({ mode: 'portal', cols: 17, rows: 15 });
+  g.dir = 'down';
+  g.snake = [{ x: 4, y: 4 }, { x: 4, y: 3 }, { x: 4, y: 2 }];
+  g.foods = [{ x: 4, y: 5, pair: 7 }, { x: 10, y: 8, pair: 7 }];
+  assert.equal(step(g), 'portal'); // head now at the exit (10,8)
+  queueTurn(g, 'right');
+  step(g);
+  assert.deepEqual(g.snake[0], { x: 11, y: 8 }, 'came out heading right');
+});
+
+test('portal mode: grace turn re-aims the first move out of the exit', () => {
+  const g = running({ mode: 'portal', cols: 17, rows: 15 });
+  g.dir = 'down';
+  g.snake = [{ x: 4, y: 4 }, { x: 4, y: 3 }, { x: 4, y: 2 }];
+  g.foods = [{ x: 4, y: 5, pair: 7 }, { x: 10, y: 8, pair: 7 }];
+  step(g); // into the portal
+  step(g); // out of the exit, still heading down
+  assert.deepEqual(g.snake[0], { x: 10, y: 9 });
+  assert.equal(redirectExit(g, 'right'), true);
+  assert.deepEqual(g.snake[0], { x: 11, y: 8 });
+  assert.equal(g.dir, 'right');
+  assert.equal(redirectExit(g, 'up'), false, 'only once');
+  step(g);
+  assert.deepEqual(g.snake[0], { x: 12, y: 8 });
+});
+
+test('portal mode: no grace turn on ordinary moves', () => {
+  const g = running({ mode: 'portal', cols: 17, rows: 15 });
+  g.foods = [];
+  step(g);
+  assert.equal(redirectExit(g, 'up'), false);
 });

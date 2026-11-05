@@ -93,6 +93,10 @@ export function step(state) {
   const d = DIRECTIONS[state.dir];
   const head = state.snake[0];
   const next = { x: head.x + d.x, y: head.y + d.y };
+  // Portal grace: remember when this move is the first one out of a portal exit.
+  const leavingExit = state.justTeleported;
+  state.justTeleported = false;
+  state.leftExit = null;
 
   if (next.x < 0 || next.y < 0 || next.x >= state.cols || next.y >= state.rows) return die(state);
   if (state.walls.some((w) => same(w, next))) return die(state);
@@ -118,7 +122,11 @@ export function step(state) {
 
   state.snake.unshift(newHead);
   if (!eating) state.snake.pop();
-  if (jump) state.jumps.push(jump);
+  if (jump) {
+    state.jumps.push(jump);
+    state.justTeleported = true;
+  }
+  if (leavingExit && !eating) state.leftExit = { exit: { x: head.x, y: head.y } };
   pruneJumps(state);
   if (!eating) return 'move';
 
@@ -139,6 +147,25 @@ export function step(state) {
     spawnFoods(state, 1);
   }
   return jump ? 'portal' : 'eat';
+}
+
+// Portal grace turn: right after the head comes out of a portal exit, a turn can
+// re-aim that first move (as if it had been pressed before going in). Only when
+// the new square is safe and empty; returns true if the move was redirected.
+export function redirectExit(state, dir) {
+  const ex = state.leftExit;
+  if (!ex || state.status !== 'running' || !DIRECTIONS[dir] || dir === state.dir) return false;
+  const d = DIRECTIONS[dir];
+  const cell = { x: ex.exit.x + d.x, y: ex.exit.y + d.y };
+  if (cell.x < 0 || cell.y < 0 || cell.x >= state.cols || cell.y >= state.rows) return false;
+  if (state.walls.some((w) => same(w, cell))) return false;
+  if (state.foods.some((f) => same(f, cell))) return false;
+  if (state.snake.slice(1).some((s) => same(s, cell))) return false;
+  state.snake[0] = cell;
+  state.dir = dir;
+  state.turnQueue = [];
+  state.leftExit = null;
+  return true;
 }
 
 function die(state) {
