@@ -27,18 +27,22 @@ export const FRUIT_COUNTS = { one: 1, three: 3, five: 5, ten: 10, random: 'rando
 //            snake's body.
 //  yinyang – eating a fruit flips the snake: the tail becomes the head and it
 //            heads off the way the old tail was pointing.
+//  magnet  – fruits fly like winged mode but steer toward the snake's head.
 export const GAME_MODES = {
   classic: { name: 'Classic' },
   wall: { name: 'Walls' },
   portal: { name: 'Portals' },
   winged: { name: 'Winged' },
   yinyang: { name: 'Yin Yang' },
+  magnet: { name: 'Magnet' },
 };
 
 // Modes where fruits move freely (x, y are the fruit's centre in cell units).
-export const FLYING_MODES = new Set(['winged']);
+export const FLYING_MODES = new Set(['winged', 'magnet']);
 export const FRUIT_RADIUS = 0.34; // cells
 export const WING_SPEED = 2.2; // cells per second
+export const MAGNET_SPEED = 2; // top speed toward the head, cells per second
+export const MAGNET_STEER = 2.5; // how quickly a fruit turns toward the head (per second)
 export const FRUITS_PER_WALL = 2;
 
 // Milliseconds per tile at speed 1. Speed is a multiplier on that time:
@@ -204,6 +208,15 @@ export function updateFlyers(state, dt, head = null) {
   const obstacles = [...state.snake.slice(1), ...state.walls];
 
   for (const f of state.foods) {
+    if (state.mode === 'magnet') {
+      // Ease the velocity toward "straight at the head, at MAGNET_SPEED".
+      const dx = h.x - f.x;
+      const dy = h.y - f.y;
+      const d = Math.hypot(dx, dy) || 1;
+      const k = Math.min(1, MAGNET_STEER * dt);
+      f.vx += ((dx / d) * MAGNET_SPEED - f.vx) * k;
+      f.vy += ((dy / d) * MAGNET_SPEED - f.vy) * k;
+    }
     const speed = Math.hypot(f.vx, f.vy);
     const n = Math.max(1, Math.ceil((speed * dt) / 0.1)); // small sub-steps: no tunnelling
     const sdt = dt / n;
@@ -332,8 +345,9 @@ export function spawnFoods(state, n) {
         const a = state.rng() * Math.PI * 2;
         f.x += 0.5;
         f.y += 0.5;
-        f.vx = Math.cos(a) * WING_SPEED;
-        f.vy = Math.sin(a) * WING_SPEED;
+        const v = state.mode === 'magnet' ? MAGNET_SPEED * 0.3 : WING_SPEED;
+        f.vx = Math.cos(a) * v;
+        f.vy = Math.sin(a) * v;
       }
       state.foods.push(f);
     }

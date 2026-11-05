@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createGame, step, queueTurn, spawnWall, placeFood, keepsBoardOpen, redirectExit, updateFlyers, FRUIT_RADIUS,
+  MAGNET_SPEED,
 } from '../src/game.js';
 
 const at = (list, p) => list.some((s) => s.x === p.x && s.y === p.y);
@@ -261,4 +262,33 @@ test('yin yang mode: a straight snake flips to head straight back', () => {
   step(g);
   assert.deepEqual(g.turnQueue, []);
   assert.equal(g.dir, 'left');
+});
+
+// ---------- magnet ----------
+test('magnet mode: fruits are drawn toward the head and get eaten', () => {
+  const g = running({ mode: 'magnet', cols: 17, rows: 15 });
+  const h = g.snake[0];
+  const head = { x: h.x + 0.5, y: h.y + 0.5 };
+  g.foods = [{ id: 1, x: head.x + 5, y: head.y + 4, vx: 0, vy: 0 }];
+  const d0 = Math.hypot(g.foods[0].x - head.x, g.foods[0].y - head.y);
+  updateFlyers(g, 0.5);
+  const f = g.foods[0];
+  const d1 = Math.hypot(f.x - head.x, f.y - head.y);
+  assert.ok(d1 < d0, `moved closer (${d0.toFixed(2)} -> ${d1.toFixed(2)})`);
+  assert.ok(Math.hypot(f.vx, f.vy) <= MAGNET_SPEED + 1e-9, 'never faster than the magnet speed');
+  // Keep pulling: it reaches the head and is eaten.
+  let eaten = 0;
+  for (let i = 0; i < 100 && !eaten; i++) eaten = updateFlyers(g, 0.05).length;
+  assert.equal(eaten, 1);
+  assert.equal(g.score, 1);
+});
+
+test('magnet mode: the body still blocks a fruit', () => {
+  const g = running({ mode: 'magnet', cols: 17, rows: 15 });
+  // Head at (2,7); a wall of body squares at x=5 between it and the fruit.
+  g.snake = [{ x: 2, y: 7 }, ...Array.from({ length: 15 }, (_, y) => ({ x: 5, y }))];
+  g.foods = [{ id: 1, x: 9.5, y: 7.5, vx: 0, vy: 0 }];
+  for (let i = 0; i < 100; i++) updateFlyers(g, 0.05);
+  assert.ok(g.foods[0].x >= 6 + FRUIT_RADIUS - 1e-6, `stayed behind the body (x=${g.foods[0].x.toFixed(2)})`);
+  assert.equal(g.score, 0);
 });

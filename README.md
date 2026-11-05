@@ -18,6 +18,7 @@ Top bar: fullscreen, mute, and close (back to menu).
 - **Portals** — fruits come in matched pairs (each pair a different fruit). Eat one end and you come straight out of the other; both fruits stay as the portal ends until your tail is through. Fruit count = number of pairs.
 - **Winged** — fruits fly freely around the board, bouncing off the edges and your body. Catch one by touching it with your head.
 - **Yin Yang** — every fruit you eat flips the snake: your tail becomes your head and you head off the other way.
+- **Magnet** — fruits fly like Winged, but steer toward your head (your body still blocks them).
 
 The shuffle button at the bottom of Settings randomises every row.
 

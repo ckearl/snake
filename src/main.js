@@ -7,7 +7,9 @@ import {
 } from './render.js';
 import { THEMES, SKINS, DEFAULT_THEME, DEFAULT_SKIN, THEME_ICONS, shade } from './themes.js';
 import { FRUITS, DEFAULT_FRUIT, BASKET } from './fruits.js';
-import { BUNNY, TURTLE, WALL_ICON, PORTAL_ICON, YINYANG_ICON } from './critters.js';
+import {
+  BUNNY, TURTLE, WALL_ICON, PORTAL_ICON, YINYANG_ICON, MAGNET_ICON,
+} from './critters.js';
 import { makeFireworks, drawFireworks, drawDizzyStars } from './effects.js';
 import { sfx, isMuted, setMuted } from './sound.js';
 
@@ -313,7 +315,9 @@ function modeIcon(id) {
 
 // Classic: a tiny board with a snake heading for a fruit. The other modes are
 // simple pixel sprites: a brick wall, two offset portals.
-const MODE_SPRITES = { wall: WALL_ICON, portal: PORTAL_ICON, yinyang: YINYANG_ICON };
+const MODE_SPRITES = {
+  wall: WALL_ICON, portal: PORTAL_ICON, yinyang: YINYANG_ICON, magnet: MAGNET_ICON,
+};
 function paintModeIcon(c) {
   const id = c.dataset.modeIcon;
   const ctx = sizeCanvas(c, 45, 45);

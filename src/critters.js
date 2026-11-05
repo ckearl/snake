@@ -88,3 +88,20 @@ export const YINYANG_ICON = sprite(14, 14, (px) => {
   }
   outline(px, '#8C95A8');
 });
+
+// Magnet: a horseshoe magnet with silver tips.
+export const MAGNET_ICON = sprite(14, 13, (px) => {
+  map(px, [
+    '.SSS......SSS.',
+    '.sss......sss.',
+    '.rRr......rRr.',
+    '.rRr......rRr.',
+    '.rRr......rRr.',
+    '.rRr......rRr.',
+    '.rRrr....rrRr.',
+    '..rRrrrrrrRr..',
+    '...rRRRRRRr...',
+    '....rrrrrr....',
+  ], { r: '#D8343F', R: '#F2707A', S: '#F4F4F8', s: '#B8BCC8' }, 0, 1);
+  outline(px, '#5A1418');
+});
