@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createGame, step, queueTurn, spawnWall, placeFood, keepsBoardOpen, redirectExit } from '../src/game.js';
+import {
+  createGame, step, queueTurn, spawnWall, placeFood, keepsBoardOpen, redirectExit, updateFlyers, FRUIT_RADIUS,
+} from '../src/game.js';
 
 const at = (list, p) => list.some((s) => s.x === p.x && s.y === p.y);
 
@@ -179,4 +181,59 @@ test('portal mode: no grace turn on ordinary moves', () => {
   g.foods = [];
   step(g);
   assert.equal(redirectExit(g, 'up'), false);
+});
+
+// ---------- winged ----------
+
+test('winged mode: fruits spawn mid-square with a velocity', () => {
+  const g = createGame({ cols: 17, rows: 15, mode: 'winged', fruitCount: 5 });
+  assert.equal(g.foods.length, 5);
+  for (const f of g.foods) {
+    assert.equal(f.x % 1, 0.5);
+    assert.ok(Math.hypot(f.vx, f.vy) > 0);
+  }
+});
+
+test('winged mode: fruits fly and bounce off the board edges', () => {
+  const g = running({ mode: 'winged', cols: 10, rows: 9 });
+  g.foods = [{ id: 1, x: 9.4, y: 4.5, vx: 2, vy: 0 }];
+  g.snake = [{ x: 0, y: 8 }, { x: 0, y: 7 }];
+  updateFlyers(g, 0.5);
+  const f = g.foods[0];
+  assert.ok(f.vx < 0, 'bounced back off the right edge');
+  assert.ok(f.x <= 10 - FRUIT_RADIUS);
+});
+
+test('winged mode: fruits bounce off the snake body', () => {
+  const g = running({ mode: 'winged', cols: 10, rows: 9 });
+  g.snake = [{ x: 0, y: 0 }, { x: 5, y: 4 }, { x: 5, y: 5 }];
+  g.foods = [{ id: 1, x: 3.5, y: 4.5, vx: 2, vy: 0 }];
+  updateFlyers(g, 1); // 2 squares of travel: reaches the body at x=5 and bounces
+  const f = g.foods[0];
+  assert.ok(f.vx < 0, 'bounced back');
+  assert.ok(f.x <= 5 - FRUIT_RADIUS + 1e-9, 'never entered the body square');
+});
+
+test('winged mode: touching the head eats the fruit and grows next tick', () => {
+  const g = running({ mode: 'winged', cols: 10, rows: 9 });
+  const h = g.snake[0];
+  g.foods = [{ id: 1, x: h.x + 1.2, y: h.y + 0.5, vx: -2, vy: 0 }];
+  const eaten = updateFlyers(g, 0.2);
+  assert.equal(eaten.length, 1);
+  assert.equal(g.score, 1);
+  assert.equal(g.grow, 1);
+  assert.equal(g.foods.length, 1, 'replaced');
+  const len = g.snake.length;
+  step(g);
+  assert.equal(g.snake.length, len + 1, 'grew on the next tick');
+  assert.equal(g.grow, 0);
+});
+
+test('winged mode: stepping onto a fruit square does not eat (only touching does)', () => {
+  const g = running({ mode: 'winged', cols: 10, rows: 9 });
+  const h = g.snake[0];
+  g.foods = [{ id: 1, x: 0.5, y: 0.5, vx: 0, vy: 0 }];
+  // Nothing at the next square; stepping just moves.
+  assert.equal(step(g), 'move');
+  assert.equal(g.snake[0].x, h.x + 1);
 });

@@ -143,5 +143,5 @@ test('fruit count is capped by free space', () => {
   // 4×1 board, snake fills 3 cells -> only 1 cell left for fruit.
   const g = createGame({ cols: 4, rows: 1, fruitCount: 10 });
   assert.equal(g.snake.length, 3);
-  assert.deepEqual(g.foods, [{ x: 3, y: 0 }]);
+  assert.deepEqual(g.foods.map(({ x, y }) => ({ x, y })), [{ x: 3, y: 0 }]);
 });

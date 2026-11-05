@@ -1,8 +1,9 @@
 import {
-  BOARD_SIZES, FRUIT_COUNTS, SPEEDS, GAME_MODES, BASE_TICK_MS, createGame, queueTurn, step, redirectExit,
+  BOARD_SIZES, FRUIT_COUNTS, SPEEDS, GAME_MODES, BASE_TICK_MS, FLYING_MODES,
+  createGame, queueTurn, step, redirectExit, updateFlyers,
 } from './game.js';
 import {
-  sizeCanvas, drawBoard, drawSnake, drawSnakePath, interpolateSnake, snakePoints, drawWall, drawFruit, drawSprite, drawCrown, drawScene, setBoardColors, setSnakeSkin,
+  sizeCanvas, drawBoard, drawSnake, drawSnakePath, interpolateSnake, snakePoints, drawWall, drawWings, drawFruit, drawSprite, drawCrown, drawScene, setBoardColors, setSnakeSkin,
 } from './render.js';
 import { THEMES, SKINS, DEFAULT_THEME, DEFAULT_SKIN, THEME_ICONS, shade } from './themes.js';
 import { FRUITS, DEFAULT_FRUIT, BASKET } from './fruits.js';
@@ -67,8 +68,8 @@ const foodBorn = new Map(); // "x,y" -> time the fruit appeared (for pop-in)
 let deathTimer = null;
 let prevSnake = null; // snake before the latest step (for smooth interpolation)
 let endFx = null; // { type: 'lose' | 'win', t0, fireworks? }
-let eaten = null;
-let portalFruits = null; // { kind, from, to } – the pair just entered, shown until the head reaches it // fruit eaten on the latest step, shrinks as the head arrives
+let eaten = []; // fruits shrinking away after being eaten: { cx, cy, kind, t0 }
+let portalFruits = null; // { kind, from, to } – the pair just entered, shown until the head reaches it
 let elapsedMs = 0; // stopwatch: time spent with the snake actually moving
 let timerText = '';
 
@@ -79,7 +80,7 @@ function newGame() {
   wallBorn.clear();
   pairKinds.clear();
   prevSnake = null;
-  eaten = null;
+  eaten = [];
   portalFruits = null;
   endFx = null;
   elapsedMs = 0;
@@ -318,6 +319,12 @@ function paintModeIcon(c) {
   const ctx = sizeCanvas(c, 45, 45);
   if (MODE_SPRITES[id]) {
     drawSprite(ctx, MODE_SPRITES[id], 2, 2, 41);
+    return;
+  }
+  if (id === 'winged') {
+    // A fruit with wings.
+    drawWings(ctx, 22.5, 22, 26, true);
+    drawFruit(ctx, iconFruit(0), 10, 9, 25);
     return;
   }
   const t = THEMES[active.theme];
@@ -628,17 +635,20 @@ function drawGame(t) {
 
 
   const onBoard = new Set();
+  const flying = FLYING_MODES.has(game.mode);
   for (const f of game.foods) {
-    const key = `${f.x},${f.y}`;
+    const key = f.id ?? `${f.x},${f.y}`;
     onBoard.add(key);
     if (!foodBorn.has(key)) foodBorn.set(key, t);
     // Little pop-in when a new fruit appears.
     const p = Math.min(1, (t - foodBorn.get(key)) / 180);
     const scale = p < 1 ? 0.4 + 0.75 * p - 0.15 * p * p : 1;
-    const size = cell * 0.9 * scale;
-    const x = f.x * cell + (cell - size) / 2;
-    const y = f.y * cell + (cell - size) / 2 - cell * 0.03;
-    drawFruit(ctx, fruitKind(f), x, y, size, { shadow: true });
+    const size = cell * (flying ? 0.78 : 0.9) * scale;
+    // Grid fruits sit in their square; flying fruits are positioned by centre.
+    const cx = flying ? f.x * cell : (f.x + 0.5) * cell;
+    const cy = flying ? f.y * cell : (f.y + 0.5) * cell;
+    if (game.mode === 'winged') drawWings(ctx, cx, cy, size, Math.floor((t + (f.id ?? 0) * 97) / 130) % 2 === 0);
+    drawFruit(ctx, fruitKind(f), cx - size / 2, cy - size / 2 - cell * 0.03, size, { shadow: !flying });
   }
   for (const key of foodBorn.keys()) if (!onBoard.has(key)) foodBorn.delete(key);
 
@@ -655,10 +665,13 @@ function drawGame(t) {
   }
 
   // The fruit just eaten shrinks away as the head slides onto it.
-  if (eaten && alpha < 1) {
-    const size = cell * 0.9 * (1 - alpha);
-    drawFruit(ctx, eaten.kind, eaten.x * cell + (cell - size) / 2, eaten.y * cell + (cell - size) / 2, size);
+  for (const e of eaten) {
+    const k = (t - e.t0) / tickMs();
+    if (k >= 1) continue;
+    const size = cell * 0.9 * (1 - k);
+    drawFruit(ctx, e.kind, e.cx * cell - size / 2, e.cy * cell - size / 2, size);
   }
+  eaten = eaten.filter((e) => t - e.t0 < tickMs());
 
   const live = game.status === 'running' || game.status === 'ready';
   const opts = {
@@ -695,18 +708,28 @@ function drawBonk(ctx, ms, opts) {
   }
 }
 
+// Flying fruits: move them, and catch any touching the head where it's drawn.
+function flyFruits(dt, t) {
+  const alpha = prevSnake ? Math.min(1, acc / tickMs()) : 1;
+  const head = prevSnake ? interpolateSnake(game.snake, prevSnake, alpha, game.jumps)[0] : null;
+  const caught = updateFlyers(game, dt, head);
+  for (const f of caught) {
+    eaten.push({ cx: f.x, cy: f.y, kind: fruitKind(f), t0: t });
+    sfx.eat();
+  }
+  if (caught.length) updateScore();
+}
+
 // Advance the game one tile.
 function doStep() {
   prevSnake = game.snake.map((q) => ({ ...q }));
   const before = game.foods.slice();
   const wallsBefore = game.walls.length;
   const ev = step(game);
-  if (ev === 'eat' || ev === 'win') {
+  if (ev === 'eat' || (ev === 'win' && !FLYING_MODES.has(game.mode))) {
     const at = game.snake[0];
     const f = before.find((q) => q.x === at.x && q.y === at.y);
-    eaten = { x: at.x, y: at.y, kind: f ? fruitKind(f) : prefs.fruit };
-  } else {
-    eaten = null;
+    eaten.push({ cx: at.x + 0.5, cy: at.y + 0.5, kind: f ? fruitKind(f) : prefs.fruit, t0: performance.now() });
   }
   portalFruits = null;
   if (ev === 'portal') {
@@ -765,6 +788,7 @@ function frame(t) {
       acc -= tick;
       doStep();
     }
+    if (FLYING_MODES.has(game.mode) && game.status === 'running') flyFruits(dt / 1000, t);
   }
 
   drawGame(t);

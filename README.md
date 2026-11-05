@@ -16,6 +16,7 @@ Top bar: fullscreen, mute, and close (back to menu).
 - **Classic** — plain snake.
 - **Walls** — every 2nd fruit eaten drops a wall block on a free square. Walls never land right in front of you and never box you in (the open squares always stay connected, with no dead ends). Walls count toward a win, so fewer fruits are needed as they appear.
 - **Portals** — fruits come in matched pairs (each pair a different fruit). Eat one end and you come straight out of the other; both fruits stay as the portal ends until your tail is through. Fruit count = number of pairs.
+- **Winged** — fruits fly freely around the board, bouncing off the edges and your body. Catch one by touching it with your head.
 
 The shuffle button at the bottom of Settings randomises every row.
 

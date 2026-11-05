@@ -133,6 +133,27 @@ export function drawWall(ctx, x, y, cell, scale = 1) {
   ctx.fillRect(px + b, py + b, s - b * 2, s - b * 3);
 }
 
+// Winged fruit: little pixel wings either side of a fruit centred at (cx, cy) px,
+// flapping between an up and a down pose.
+export function drawWings(ctx, cx, cy, size, up) {
+  const u = Math.max(1, Math.round(size / 11));
+  // Feather rows as [x offset from centre, y offset, width] in units, left wing
+  // (mirrored for the right). They stick out past the fruit so they read clearly.
+  const rows = up
+    ? [[-11, -5, 3], [-12, -4, 5], [-11, -3, 6], [-9, -2, 4]]
+    : [[-11, 2, 3], [-12, 1, 5], [-11, 0, 6], [-9, -1, 4]];
+  for (const pass of ['#8C95A8', '#FFFFFF']) {
+    const o = pass === '#FFFFFF' ? 0 : 1; // outline pass is 1px bigger
+    ctx.fillStyle = pass;
+    for (const [dx, dy, w] of rows) {
+      for (const side of [-1, 1]) {
+        const x0 = side < 0 ? cx + dx * u : cx - (dx + w) * u;
+        ctx.fillRect(Math.round(x0) - o, Math.round(cy + dy * u) - o, w * u + o * 2, u + o * 2);
+      }
+    }
+  }
+}
+
 // ---------- snake ----------
 // The snake is drawn as a thick axis-aligned polyline through cell centres
 // (points in cell units, e.g. {x: 3.5, y: 2.5}). Points may be fractional,
