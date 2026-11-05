@@ -274,3 +274,17 @@ svg .fill { fill: currentColor; stroke: none; }
 .tile canvas { display: block; pointer-events: none; }
 
 .btn.icon-only svg { position: static; transform: none; width: 32px; height: 32px; stroke-width: 3; }
+
+/* "?" = random each round */
+.tile.surprise {
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.25);
+}
+.tile .q {
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text);
+  text-shadow: 0 3px 0 rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+}

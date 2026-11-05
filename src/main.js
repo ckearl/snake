@@ -1,11 +1,11 @@
 import {
-  BOARD_SIZES, FRUIT_COUNTS, SPEEDS, BASE_TICK_MS, createGame, queueTurn, step,
+  BOARD_SIZES, FRUIT_COUNTS, SPEEDS, GAME_MODES, BASE_TICK_MS, createGame, queueTurn, step,
 } from './game.js';
 import {
   sizeCanvas, drawBoard, drawSnake, drawSnakePath, interpolateSnake, drawFruit, drawSprite, drawCrown, drawScene, setBoardColors, setSnakeSkin,
 } from './render.js';
 import { THEMES, SKINS, DEFAULT_THEME, DEFAULT_SKIN, THEME_ICONS, shade } from './themes.js';
-import { FRUITS, DEFAULT_FRUIT } from './fruits.js';
+import { FRUITS, DEFAULT_FRUIT, BASKET } from './fruits.js';
 import { BUNNY, TURTLE } from './critters.js';
 import { makeFireworks, drawFireworks, drawDizzyStars } from './effects.js';
 import { sfx, isMuted, setMuted } from './sound.js';
@@ -58,6 +58,7 @@ let lastScore = 0;
 let cell = 32;
 let boardCtx = null;
 let sceneCtx = null;
+let sceneFruit = DEFAULT_FRUIT; // fruit in the menu picture (varies when mixed)
 let acc = 0;
 let lastTime = 0;
 const foodBorn = new Map(); // "x,y" -> time the fruit appeared (for pop-in)
@@ -70,7 +71,7 @@ let timerText = '';
 
 function newGame() {
   const { cols, rows } = BOARD_SIZES[sizeKey];
-  game = createGame({ cols, rows, fruitCount: FRUIT_COUNTS[prefs.count] });
+  game = createGame({ cols, rows, fruitCount: FRUIT_COUNTS[active.count] });
   foodBorn.clear();
   prevSnake = null;
   eaten = null;
@@ -89,6 +90,7 @@ function showScreen(name) {
   el.menu.hidden = name !== 'menu';
   el.settings.hidden = name !== 'settings';
   if (name === 'menu') {
+    pickSceneFruit();
     el.lastScore.textContent = lastScore;
     el.bestScore.textContent = getBest();
     setHint(null);
@@ -100,6 +102,7 @@ function showScreen(name) {
 }
 
 function play() {
+  rollRound();
   newGame();
   showScreen('play');
   document.activeElement?.blur();
@@ -130,29 +133,79 @@ function updateScore() {
 }
 
 // ---------- settings ----------
-const pick = (k, table, d) => (table[store.get(k)] ? store.get(k) : d);
-const prefs = {
-  size: sizeKey,
-  theme: pick('snake.theme', THEMES, DEFAULT_THEME),
-  skin: pick('snake.skin', SKINS, DEFAULT_SKIN),
-  fruit: pick('snake.fruit', FRUITS, DEFAULT_FRUIT),
-  count: pick('snake.count', FRUIT_COUNTS, 'one'),
-  speed: pick('snake.speed', SPEEDS, 'normal'),
+// "?" option at the end of some rows: re-rolled from that row's other options every round.
+const SURPRISE = 'surprise';
+const SURPRISE_OPT = { name: 'Random each round' };
+// "mixed" fruit: every fruit on the board is a random kind.
+const MIXED = 'mixed';
+
+const OPTIONS = {
+  fruit: { ...FRUITS, [MIXED]: { name: 'Mixed fruit' } },
+  mode: { ...GAME_MODES, [SURPRISE]: SURPRISE_OPT },
+  count: { ...FRUIT_COUNTS, [SURPRISE]: SURPRISE_OPT },
+  speed: SPEEDS,
+  size: BOARD_SIZES,
+  skin: { ...SKINS, [SURPRISE]: SURPRISE_OPT },
+  theme: { ...THEMES, [SURPRISE]: SURPRISE_OPT },
 };
+
+const pick = (k, table, d) => (Object.hasOwn(table, store.get(k)) ? store.get(k) : d);
+const prefs = {
+  fruit: pick('snake.fruit', OPTIONS.fruit, DEFAULT_FRUIT),
+  mode: pick('snake.mode', OPTIONS.mode, 'classic'),
+  count: pick('snake.count', OPTIONS.count, 'one'),
+  speed: pick('snake.speed', OPTIONS.speed, 'normal'),
+  size: sizeKey,
+  skin: pick('snake.skin', OPTIONS.skin, DEFAULT_SKIN),
+  theme: pick('snake.theme', OPTIONS.theme, DEFAULT_THEME),
+};
+
+// What's actually in play this round (prefs, with any "?" rolled to a real value).
+const ROLLABLE = ['mode', 'count', 'skin', 'theme'];
+const active = {};
+function resolve(key) {
+  if (prefs[key] !== SURPRISE) {
+    active[key] = prefs[key];
+    return;
+  }
+  const ids = Object.keys(OPTIONS[key]).filter((id) => id !== SURPRISE);
+  const fresh = ids.filter((id) => id !== active[key]); // avoid repeating last round's roll
+  const pool = fresh.length ? fresh : ids;
+  active[key] = pool[Math.floor(Math.random() * pool.length)];
+}
+function rollRound() {
+  for (const k of ROLLABLE) resolve(k);
+  applyTheme();
+  applySkin();
+  repaintThemedIcons();
+}
+
+const randomFruit = () => {
+  const ids = Object.keys(FRUITS);
+  return ids[Math.floor(Math.random() * ids.length)];
+};
+// Fruit kind for a board fruit: fixed choice, or the fruit's own rolled kind when mixed.
+function fruitKind(f) {
+  if (prefs.fruit !== MIXED) return prefs.fruit;
+  if (!f.kind) f.kind = randomFruit();
+  return f.kind;
+}
 
 const tickMs = () => BASE_TICK_MS * SPEEDS[prefs.speed];
 const SPEED_NAMES = { slow: 'Slow (turtle)', normal: 'Normal (snake)', fast: 'Fast (bunny)' };
 
 const COUNT_NAMES = { one: '1 fruit', three: '3 fruits', five: '5 fruits', ten: '10 fruits', random: 'Random 1–10 fruits' };
+const optName = (names) => (o, id) => (id === SURPRISE ? o.name : names ? names[id] : o.name);
 
 const SETTINGS = [
-  { key: 'size', label: 'Board size', options: BOARD_SIZES, name: (o) => `${o.label} · ${o.cols}×${o.rows}`, icon: sizeIcon },
-  { key: 'theme', label: 'Board theme', options: THEMES, name: (o) => o.name, icon: themeIcon },
-  { key: 'skin', label: 'Snake color', options: SKINS, name: (o) => o.name, icon: skinIcon },
-  { key: 'fruit', label: 'Fruit', options: FRUITS, name: (o) => o.name, icon: fruitIcon },
-  { key: 'count', label: 'Fruit count', options: FRUIT_COUNTS, name: (_, id) => COUNT_NAMES[id], icon: countIcon },
-  { key: 'speed', label: 'Speed', options: SPEEDS, name: (_, id) => SPEED_NAMES[id], icon: speedIcon },
-];
+  { key: 'fruit', label: 'Fruit', name: optName(), icon: fruitIcon },
+  { key: 'mode', label: 'Game mode', name: optName(), icon: modeIcon },
+  { key: 'count', label: 'Fruit count', name: optName(COUNT_NAMES), icon: countIcon },
+  { key: 'speed', label: 'Speed', name: optName(SPEED_NAMES), icon: speedIcon },
+  { key: 'size', label: 'Board size', name: (o) => `${o.label} · ${o.cols}×${o.rows}`, icon: sizeIcon },
+  { key: 'skin', label: 'Snake color', name: optName(), icon: skinIcon },
+  { key: 'theme', label: 'Board theme', name: optName(), icon: themeIcon },
+].map((s) => ({ ...s, options: OPTIONS[s.key] }));
 
 const SIZE_ICON_GRID = { small: 3, medium: 4, large: 6 };
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -168,7 +221,7 @@ function sizeIcon(id) {
 function paintSizeIcon(c) {
   const S = 40;
   const ctx = sizeCanvas(c, S, S);
-  const t = THEMES[prefs.theme];
+  const t = THEMES[active.theme];
   ctx.fillStyle = t.margins;
   ctx.fillRect(0, 0, S, S);
   const n = SIZE_ICON_GRID[c.dataset.sizeIcon];
@@ -213,8 +266,47 @@ function skinIcon(id) {
 
 function fruitIcon(id) {
   const c = document.createElement('canvas');
-  drawFruit(sizeCanvas(c, 42, 42), id, 0, 0, 42);
+  const ctx = sizeCanvas(c, 42, 42);
+  if (id === MIXED) drawSprite(ctx, BASKET, 0, 0, 42);
+  else drawFruit(ctx, id, 0, 0, 42);
   return c;
+}
+
+// "?" tile for random-each-round options.
+function surpriseIcon() {
+  const q = document.createElement('span');
+  q.className = 'q';
+  q.textContent = '?';
+  return q;
+}
+
+// Game mode icons. Classic: a little board with a snake heading for a fruit.
+function modeIcon(id) {
+  const c = document.createElement('canvas');
+  c.dataset.modeIcon = id;
+  paintModeIcon(c);
+  return c;
+}
+
+function paintModeIcon(c) {
+  const ctx = sizeCanvas(c, 45, 45);
+  const t = THEMES[active.theme];
+  drawBoard(ctx, 3, 3, 15);
+  ctx.strokeStyle = t.margins;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1, 1, 43, 43);
+  drawFruit(ctx, iconFruit(0), 31, 16, 13);
+  drawSnake(ctx, [{ x: 1, y: 1 }, { x: 0, y: 1 }, { x: 0, y: 2 }], 15, { dir: 'right', shadow: false });
+}
+
+// Fruit to show in icons: the chosen one, or a varied set when mixed.
+const ICON_MIX = ['apple', 'banana', 'grapes', 'orange', 'strawberry', 'cherries', 'kiwi', 'lemon', 'peach', 'watermelon'];
+const iconFruit = (i) => (prefs.fruit === MIXED ? ICON_MIX[i % ICON_MIX.length] : prefs.fruit);
+
+function repaintThemedIcons() {
+  for (const c of document.querySelectorAll('[data-size-icon]')) paintSizeIcon(c);
+  for (const c of document.querySelectorAll('[data-mode-icon]')) paintModeIcon(c);
+  for (const c of document.querySelectorAll('[data-speed-snake]')) paintSpeedSnake(c);
 }
 
 // Fruit-count icons are drawn with the currently selected fruit.
@@ -237,7 +329,8 @@ function countIcon(id) {
 function paintCountIcon(c) {
   const S = 48;
   const ctx = sizeCanvas(c, S, S);
-  const place = (cx, cy, size) => drawFruit(ctx, prefs.fruit, cx - size / 2, cy - size / 2, size);
+  let n = 0;
+  const place = (cx, cy, size) => drawFruit(ctx, iconFruit(n++), cx - size / 2, cy - size / 2, size);
   switch (c.dataset.countIcon) {
     case 'one':
       place(24, 24, 36);
@@ -277,9 +370,15 @@ function paintSpeedSnake(c) {
 }
 
 function paintFruitIcons() {
-  drawFruit(sizeCanvas($('score-icon'), 34, 34), prefs.fruit, 0, 0, 34);
-  drawFruit(sizeCanvas($('stat-fruit'), 48, 48), prefs.fruit, 0, 0, 48);
+  const paint = (canvas, size) => {
+    const ctx = sizeCanvas(canvas, size, size);
+    if (prefs.fruit === MIXED) drawSprite(ctx, BASKET, 0, 0, size);
+    else drawFruit(ctx, prefs.fruit, 0, 0, size);
+  };
+  paint($('score-icon'), 34);
+  paint($('stat-fruit'), 48);
   for (const c of document.querySelectorAll('[data-count-icon]')) paintCountIcon(c);
+  for (const c of document.querySelectorAll('[data-mode-icon]')) paintModeIcon(c);
 }
 
 // ---------- settings carousels ----------
@@ -302,7 +401,8 @@ function buildSettings() {
       tile.dataset.id = id;
       tile.setAttribute('role', 'option');
       tile.setAttribute('aria-label', s.name(opt, id));
-      tile.append(s.icon(id, tile));
+      if (id === SURPRISE) tile.classList.add('surprise');
+      tile.append(id === SURPRISE ? surpriseIcon() : s.icon(id, tile));
       s.track.append(tile);
     }
     row.append(s.track);
@@ -359,7 +459,9 @@ function wireCarousel(s) {
     // Once native scrolling/snapping settles, adopt whatever is centred.
     clearTimeout(settleTimer);
     settleTimer = setTimeout(() => {
-      if (drag) return;
+      // Ignore if Settings was closed mid-scroll: a hidden track measures as
+      // all-zero and would wrongly "select" its first option.
+      if (drag || screen !== 'settings' || !track.clientWidth) return;
       const id = nearestTile(s).dataset.id;
       if (id !== prefs[s.key]) choose(s, id, { scroll: false });
     }, 150);
@@ -417,20 +519,22 @@ function choose(s, id, { scroll = true } = {}) {
   if (prefs[s.key] !== id) {
     prefs[s.key] = id;
     store.set(`snake.${s.key}`, id);
+    if (ROLLABLE.includes(s.key)) resolve(s.key);
     if (s.key === 'size') {
       sizeKey = id;
       lastScore = 0;
       newGame(); // preview the new board behind the menu
     } else if (s.key === 'theme') {
       applyTheme();
-      for (const c of document.querySelectorAll('[data-size-icon]')) paintSizeIcon(c);
+      repaintThemedIcons();
     } else if (s.key === 'skin') {
       applySkin();
-      for (const c of document.querySelectorAll('[data-speed-snake]')) paintSpeedSnake(c);
+      repaintThemedIcons();
     } else if (s.key === 'fruit') {
       paintFruitIcons();
-    } else if (s.key === 'count') {
-      newGame(); // preview the new fruit layout behind the menu
+      pickSceneFruit();
+    } else if (s.key === 'count' || s.key === 'mode') {
+      newGame(); // preview the new layout behind the menu
     }
   }
   syncSetting(s, scroll ? 'smooth' : null);
@@ -447,7 +551,7 @@ function syncSetting(s, behavior) {
 }
 
 function applyTheme() {
-  const t = THEMES[prefs.theme];
+  const t = THEMES[active.theme];
   const css = document.documentElement.style;
   css.setProperty('--topbar', t.topBar);
   css.setProperty('--frame', t.margins);
@@ -459,7 +563,7 @@ function applyTheme() {
 }
 
 function applySkin() {
-  setSnakeSkin(SKINS[prefs.skin]);
+  setSnakeSkin(SKINS[active.skin]);
 }
 
 // ---------- layout ----------
@@ -494,7 +598,7 @@ function drawGame(t) {
     const size = cell * 0.9 * scale;
     const x = f.x * cell + (cell - size) / 2;
     const y = f.y * cell + (cell - size) / 2 - cell * 0.03;
-    drawFruit(ctx, prefs.fruit, x, y, size, { shadow: true });
+    drawFruit(ctx, fruitKind(f), x, y, size, { shadow: true });
   }
   for (const key of foodBorn.keys()) if (!onBoard.has(key)) foodBorn.delete(key);
 
@@ -505,7 +609,7 @@ function drawGame(t) {
   // The fruit just eaten shrinks away as the head slides onto it.
   if (eaten && alpha < 1) {
     const size = cell * 0.9 * (1 - alpha);
-    drawFruit(ctx, prefs.fruit, eaten.x * cell + (cell - size) / 2, eaten.y * cell + (cell - size) / 2, size);
+    drawFruit(ctx, eaten.kind, eaten.x * cell + (cell - size) / 2, eaten.y * cell + (cell - size) / 2, size);
   }
 
   const live = game.status === 'running' || game.status === 'ready';
@@ -544,15 +648,22 @@ function drawBonk(ctx, ms, opts) {
 // Advance the game one tile.
 function doStep() {
   prevSnake = game.snake.map((q) => ({ ...q }));
+  const before = game.foods.slice();
   const ev = step(game);
-  eaten = ev === 'eat' || ev === 'win' ? { ...game.snake[0] } : null;
+  if (ev === 'eat' || ev === 'win') {
+    const h = game.snake[0];
+    const f = before.find((q) => q.x === h.x && q.y === h.y);
+    eaten = { x: h.x, y: h.y, kind: f ? fruitKind(f) : prefs.fruit };
+  } else {
+    eaten = null;
+  }
   if (ev === 'eat') { sfx.eat(); updateScore(); }
   if (ev === 'die' || ev === 'win') onGameEnd(ev);
 }
 
 function drawMenuScene(t) {
   if (!sceneCtx) return;
-  drawScene(sceneCtx, SCENE_W, SCENE_H, { tongue: tongueOut(t + 800), fruit: prefs.fruit });
+  drawScene(sceneCtx, SCENE_W, SCENE_H, { tongue: tongueOut(t + 800), fruit: sceneFruit });
 }
 
 // ---------- loop ----------
@@ -712,12 +823,17 @@ if (new URLSearchParams(location.search).has('debug')) {
 }
 
 // ---------- boot ----------
+function pickSceneFruit() {
+  sceneFruit = prefs.fruit === MIXED ? randomFruit() : prefs.fruit;
+}
+
 function initIcons() {
   paintFruitIcons();
   drawCrown(sizeCanvas($('stat-crown'), 48, 48), 0, 2, 48);
   sceneCtx = sizeCanvas(el.scene, SCENE_W, SCENE_H);
 }
 
+for (const k of ROLLABLE) resolve(k);
 applyTheme();
 applySkin();
 buildSettings();

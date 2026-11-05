@@ -1,6 +1,6 @@
 // Pixel-art fruit sprites. Each sprite is a 2D array of CSS colours (null = transparent).
 // Round fruits are generated from shaded ellipses; the rest are hand-drawn char maps.
-import { put, map, ellipse, shaded, sprite } from './pixels.js';
+import { put, map, ellipse, shaded, sprite, outline } from './pixels.js';
 
 const BROWN = '#6B4423';
 const LEAF = '#4CBF55';
@@ -345,3 +345,27 @@ export const FRUITS = {
   avocado: { name: 'Avocado', sprite: avocado },
 };
 export const DEFAULT_FRUIT = 'orange';
+
+// Fruit basket: the icon for "mixed fruit" (every fruit a random kind).
+export const BASKET = sprite(14, 14, (px) => {
+  // Handle
+  for (const [x, y] of [[4, 0], [5, 0], [6, 0], [7, 0], [8, 0], [9, 0], [3, 1], [10, 1], [2, 2], [11, 2], [2, 3], [11, 3], [2, 4], [11, 4]]) {
+    put(px, x, y, '#8A5A2B');
+  }
+  // Fruit peeking out: apple, banana, orange, grapes
+  ellipse(px, 4.4, 5.4, 1.9, 1.9, shaded({ base: '#E0352B', light: '#F4705F', dark: '#A9201A' }));
+  map(px, ['..yy', '.yy.', 'yy..'], { y: '#F5D63D' }, 5, 2);
+  ellipse(px, 7.4, 5.6, 1.7, 1.7, shaded({ base: '#F7931E', light: '#FFC56A', dark: '#D9690B' }));
+  for (const [x, y] of [[9.4, 4.6], [10.6, 5.4], [9.6, 6]]) {
+    ellipse(px, x, y, 0.9, 0.9, () => '#7D46C8');
+  }
+  // Woven basket body, tapering toward the bottom
+  const rows = [[1, 12], [1, 12], [1, 12], [2, 11], [2, 11], [3, 10]];
+  rows.forEach(([x0, x1], i) => {
+    const y = 7 + i;
+    for (let x = x0; x <= x1; x++) {
+      px[y][x] = i === 0 ? '#6B3F1C' : (x + y) % 2 ? '#B87838' : '#93592A';
+    }
+  });
+  outline(px, '#4A2A12');
+});

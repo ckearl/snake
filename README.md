@@ -9,7 +9,7 @@ npm test    # game-logic + interpolation tests (node --test)
 
 Must be served over HTTP (not opened via `file://`) because it uses ES modules.
 
-**Controls:** Arrows / WASD to move · Space or P to pause · Esc for menu · T show/hide stopwatch · M mute · F fullscreen. Settings is six draggable icon strips (board size, board theme, snake color, fruit, fruit count, speed); the icon in the centre frame is the active choice. Click an icon or use arrow keys too. All saved.
+**Controls:** Arrows / WASD to move · Space or P to pause · Esc for menu · T show/hide stopwatch · M mute · F fullscreen. Settings is seven draggable icon strips, in order: fruit (or the basket = mixed, every fruit a random kind), game mode, fruit count, speed, board size, snake color, board color. A **?** at the end of game mode / fruit count / snake color / board color re-rolls that choice every round; the icon in the centre frame is the active choice. Click an icon or use arrow keys too. All saved.
 Top bar: fullscreen, mute, and close (back to menu).
 
 **Board sizes (cols × rows):** Small 10×9 · Medium 17×15 · Large 24×21

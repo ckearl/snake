@@ -18,6 +18,9 @@ export const DIRECTIONS = {
 // (each eaten fruit is replaced). 'random' drops a batch of 1–10 and only drops
 // the next batch once every fruit in the current one has been eaten.
 export const FRUIT_COUNTS = { one: 1, three: 3, five: 5, ten: 10, random: 'random' };
+// Game modes. Only Classic for now; new modes plug in here.
+export const GAME_MODES = { classic: { name: 'Classic' } };
+
 // Milliseconds per tile at speed 1. Speed is a multiplier on that time:
 // lower = faster (bunny), higher = slower (turtle).
 export const BASE_TICK_MS = 135;
