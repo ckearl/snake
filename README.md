@@ -31,3 +31,6 @@ Top bar: fullscreen, mute, and close (back to menu).
 ## Debugging
 Open `http://localhost:8080/?debug` to get `window.snakeDebug` in devtools:
 `snakeDebug.game` (live state), `snakeDebug.win()`, `snakeDebug.lose()`.
+
+## Credits
+- Font: [Pixelify Sans](https://github.com/eifetx/Pixelify-Sans) by the Pixelify Sans Project Authors, bundled in `fonts/` under the SIL Open Font License 1.1 (`fonts/OFL.txt`).
