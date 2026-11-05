@@ -209,8 +209,10 @@ function tubeRect(ctx, a, b, w, capA, capB, cell, ox = 0, oy = 0) {
   ctx.fillRect(rx, ry, Math.round(x1 + ox) - rx, Math.round(y1 + oy) - ry);
 }
 
+// eyes: 'normal' | 'closed' | 'dizzy' (pupils spin) | 'happy' (^ ^). ms drives the spin.
 export function drawSnakePath(ctx, rawPts, cell, {
-  dir = 'right', dead = false, tongue = false, skin = null, shadow = true,
+  dir = 'right', dead = false, eyes = dead ? 'closed' : 'normal', ms = 0,
+  tongue = false, skin = null, shadow = true,
 } = {}) {
   const pts = rawPts.filter((p, i) => i === 0 || dist(p, rawPts[i - 1]) > 1e-6);
   if (!pts.length) return;
@@ -271,7 +273,7 @@ export function drawSnakePath(ctx, rawPts, cell, {
   ctx.fillRect(hx, hy, hsz, hsz);
   ctx.fillStyle = headCol;
   ctx.fillRect(hx + border, hy + border, hsz - border * 2, hsz - border * 2);
-  drawHead(ctx, h.x * cell, h.y * cell, cell, dir, { dead, tongue, ring });
+  drawHead(ctx, h.x * cell, h.y * cell, cell, dir, { eyes, ms, tongue: tongue && eyes === 'normal', ring });
 }
 
 // Tail tip disappearing into the head's mouth: a dark lip line across the joint.
@@ -292,12 +294,12 @@ function drawBite(ctx, head, tail, cell, skin) {
 }
 
 // Eyes + tongue for a head centred at pixel (cx, cy).
-function drawHead(ctx, cx, cy, cell, dir, { dead, tongue, ring }) {
+function drawHead(ctx, cx, cy, cell, dir, { eyes, ms, tongue, ring }) {
   const [dx, dy] = DIR_VEC[dir];
   const px = -dy;
   const py = dx;
 
-  if (tongue && !dead) {
+  if (tongue) {
     const w = Math.max(2, Math.round(cell * 0.08));
     const start = cell * 0.45;
     const len = cell * 0.3;
@@ -317,27 +319,39 @@ function drawHead(ctx, cx, cy, cell, dir, { dead, tongue, ring }) {
 
   const eye = Math.max(4, Math.round(cell * 0.26));
   const pupil = Math.max(2, Math.round(eye * 0.5));
-  for (const sgn of [-1, 1]) {
+  [-1, 1].forEach((sgn, i) => {
     const ex = Math.round(cx + dx * cell * 0.1 + px * sgn * cell * 0.2 - eye / 2);
     const ey = Math.round(cy + dy * cell * 0.1 + py * sgn * cell * 0.2 - eye / 2);
+
+    if (eyes === 'happy') {
+      // Closed, smiling eyes: a little ^ arch, no whites.
+      const u = Math.max(1, Math.round(eye / 4));
+      ctx.fillStyle = PALETTE.pupil;
+      ctx.fillRect(ex + u, ey + u, u * 2, u);
+      ctx.fillRect(ex, ey + u * 2, u, u * 2);
+      ctx.fillRect(ex + u * 3, ey + u * 2, u, u * 2);
+      return;
+    }
+
     // Thin ring so eyes still read on very light skins.
     ctx.fillStyle = ring;
     ctx.fillRect(ex - 1, ey - 1, eye + 2, eye + 2);
     ctx.fillStyle = PALETTE.eyeWhite;
     ctx.fillRect(ex, ey, eye, eye);
     ctx.fillStyle = PALETTE.pupil;
-    if (dead) {
-      // Closed eye: a flat line across the middle.
+    const off = Math.round((eye - pupil) / 2);
+    if (eyes === 'closed') {
       const t = Math.max(2, Math.round(eye * 0.25));
       ctx.fillRect(ex, ey + Math.round((eye - t) / 2), eye, t);
+    } else if (eyes === 'dizzy') {
+      // Pupils roll around the eye, each the opposite way.
+      const a = (ms / 1000) * Math.PI * 2 * 1.4 * (i ? -1 : 1) + (i ? Math.PI : 0);
+      ctx.fillRect(ex + off + Math.round(Math.cos(a) * off), ey + off + Math.round(Math.sin(a) * off), pupil, pupil);
     } else {
       // Pupil pushed toward the direction of travel.
-      const off = Math.round((eye - pupil) / 2);
-      const pxPos = ex + off + Math.round(dx * off);
-      const pyPos = ey + off + Math.round(dy * off);
-      ctx.fillRect(pxPos, pyPos, pupil, pupil);
+      ctx.fillRect(ex + off + Math.round(dx * off), ey + off + Math.round(dy * off), pupil, pupil);
     }
-  }
+  });
 }
 
 // ---------- menu scene: snake curled around an orange ----------

@@ -122,6 +122,17 @@ svg .fill { fill: currentColor; stroke: none; }
   pointer-events: none;
 }
 .pill.center { bottom: 50%; transform: translate(-50%, 50%); font-size: 24px; }
+.pill.win {
+  color: #FFD34D;
+  font-size: 30px;
+  padding: 12px 26px;
+  letter-spacing: 0.03em;
+  animation: win-pop 0.45s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+@keyframes win-pop {
+  from { transform: translate(-50%, 50%) scale(0.4); opacity: 0; }
+  to { transform: translate(-50%, 50%) scale(1); opacity: 1; }
+}
 
 /* ---------- menus ---------- */
 .overlay {

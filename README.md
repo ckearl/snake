@@ -23,6 +23,11 @@ Top bar: fullscreen, mute, and close (back to menu).
 - `src/fruits.js` — the 20 pixel-art fruit sprites.
 - `src/critters.js` — bunny and turtle speed icons.
 - `src/render.js` — canvas drawing: board, snake, orange/crown sprites, menu scene.
-- `src/sound.js` — WebAudio blips (eat / die / start), mute persisted.
+- `src/sound.js` — WebAudio blips (eat / die / start / win jingle), mute persisted.
+- `src/effects.js` — win fireworks and dizzy stars for the loss bonk.
 - `src/main.js` — screens (menu, settings, play), input, game loop, layout.
 - `style.css` — layout and UI styling.
+
+## Debugging
+Open `http://localhost:8080/?debug` to get `window.snakeDebug` in devtools:
+`snakeDebug.game` (live state), `snakeDebug.win()`, `snakeDebug.lose()`.

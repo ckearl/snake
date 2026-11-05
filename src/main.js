@@ -7,11 +7,14 @@ import {
 import { THEMES, SKINS, DEFAULT_THEME, DEFAULT_SKIN, THEME_ICONS, shade } from './themes.js';
 import { FRUITS, DEFAULT_FRUIT } from './fruits.js';
 import { BUNNY, TURTLE } from './critters.js';
+import { makeFireworks, drawFireworks, drawDizzyStars } from './effects.js';
 import { sfx, isMuted, setMuted } from './sound.js';
 
 const MAX_CELL = 56;
 const TOPBAR_H = 64;
-const DEATH_TO_MENU_MS = 900;
+const DEATH_TO_MENU_MS = 1400; // long enough to see the bonk + dizzy eyes
+const WIN_TO_MENU_MS = 3400; // let the fireworks play out
+const BONK_MS = 220;
 const SCENE_W = 340;
 const SCENE_H = 256;
 
@@ -60,6 +63,7 @@ let lastTime = 0;
 const foodBorn = new Map(); // "x,y" -> time the fruit appeared (for pop-in)
 let deathTimer = null;
 let prevSnake = null; // snake before the latest step (for smooth interpolation)
+let endFx = null; // { type: 'lose' | 'win', t0, fireworks? }
 let eaten = null; // fruit eaten on the latest step, shrinks as the head arrives
 let elapsedMs = 0; // stopwatch: time spent with the snake actually moving
 let timerText = '';
@@ -70,6 +74,7 @@ function newGame() {
   foodBorn.clear();
   prevSnake = null;
   eaten = null;
+  endFx = null;
   elapsedMs = 0;
   updateTimer();
   acc = 0;
@@ -113,10 +118,11 @@ function recordScore() {
   if (game.score > getBest()) store.set(bestKey(), game.score);
 }
 
-function setHint(text, center = false) {
+function setHint(text, center = false, variant = null) {
   el.hint.hidden = !text;
   el.hint.textContent = text ?? '';
   el.hint.classList.toggle('center', center);
+  el.hint.classList.toggle('win', variant === 'win');
 }
 
 function updateScore() {
@@ -502,11 +508,37 @@ function drawGame(t) {
     drawFruit(ctx, prefs.fruit, eaten.x * cell + (cell - size) / 2, eaten.y * cell + (cell - size) / 2, size);
   }
 
-  const dead = game.status === 'over';
   const live = game.status === 'running' || game.status === 'ready';
-  const opts = { dir: game.dir, dead, tongue: live && tongueOut(t) };
-  if (alpha < 1) drawSnakePath(ctx, interpolateSnake(game.snake, prevSnake, alpha), cell, opts);
-  else drawSnake(ctx, game.snake, cell, opts);
+  const opts = { dir: game.dir, tongue: live && tongueOut(t), ms: t };
+
+  if (game.status === 'over' && endFx?.type === 'lose') {
+    drawBonk(ctx, t - endFx.t0, opts);
+  } else if (game.status === 'won' && endFx?.type === 'win') {
+    drawSnake(ctx, game.snake, cell, { ...opts, eyes: 'happy' });
+    drawFireworks(ctx, endFx.fireworks, t - endFx.t0, cell);
+  } else if (alpha < 1) {
+    drawSnakePath(ctx, interpolateSnake(game.snake, prevSnake, alpha), cell, opts);
+  } else {
+    drawSnake(ctx, game.snake, cell, opts);
+  }
+}
+
+// Loss: the head bumps forward into whatever it hit and springs back, then the
+// eyes go dizzy and a few stars circle overhead.
+function drawBonk(ctx, ms, opts) {
+  const [dx, dy] = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[game.dir];
+  const bump = ms < BONK_MS ? Math.sin((Math.PI * ms) / BONK_MS) * 0.2 : 0;
+  const pts = game.snake.map((q) => ({ x: q.x + 0.5, y: q.y + 0.5 }));
+  const head = { x: pts[0].x + dx * bump, y: pts[0].y + dy * bump };
+  drawSnakePath(ctx, [head, ...pts], cell, { ...opts, eyes: ms > BONK_MS * 0.6 ? 'dizzy' : 'closed' });
+  if (ms > BONK_MS * 0.6) {
+    const fade = Math.min(1, (ms - BONK_MS * 0.6) / 300);
+    // Orbit just above the head, but kept on the board (e.g. after hitting the top wall).
+    const w = game.cols * cell;
+    const ox = Math.min(w - cell * 0.6, Math.max(cell * 0.6, head.x * cell));
+    const oy = Math.max(cell * 0.3, head.y * cell - cell * 0.62);
+    drawDizzyStars(ctx, ox, oy, cell, ms, fade);
+  }
 }
 
 // Advance the game one tile.
@@ -574,10 +606,17 @@ function frame(t) {
 function onGameEnd(ev) {
   updateScore();
   recordScore();
-  if (ev === 'die') sfx.die();
-  else sfx.eat();
-  setHint(ev === 'win' ? 'Board cleared!' : null, true);
-  deathTimer = setTimeout(() => showScreen('menu'), DEATH_TO_MENU_MS);
+  const t0 = performance.now();
+  if (ev === 'die') {
+    sfx.die();
+    endFx = { type: 'lose', t0 };
+    deathTimer = setTimeout(() => showScreen('menu'), DEATH_TO_MENU_MS);
+  } else {
+    sfx.win();
+    endFx = { type: 'win', t0, fireworks: makeFireworks(game.cols, game.rows) };
+    setHint('Perfect game!', true, 'win');
+    deathTimer = setTimeout(() => showScreen('menu'), WIN_TO_MENU_MS);
+  }
 }
 
 function pause() {
@@ -661,6 +700,16 @@ el.fullscreen.addEventListener('click', toggleFullscreen);
 document.addEventListener('fullscreenchange', () => {
   el.fullscreen.classList.toggle('on', !!document.fullscreenElement);
 });
+
+// ---------- debug ----------
+// Open with ?debug to get window.snakeDebug for poking at the game from devtools.
+if (new URLSearchParams(location.search).has('debug')) {
+  window.snakeDebug = {
+    get game() { return game; },
+    win() { game.status = 'won'; onGameEnd('win'); },
+    lose() { game.status = 'over'; onGameEnd('die'); },
+  };
+}
 
 // ---------- boot ----------
 function initIcons() {
