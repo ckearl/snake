@@ -25,11 +25,14 @@ export const FRUIT_COUNTS = { one: 1, three: 3, five: 5, ten: 10, random: 'rando
 //            twin, the body following through until the tail has passed.
 //  winged  – fruits fly freely around the board, bouncing off the edges and the
 //            snake's body.
+//  yinyang – eating a fruit flips the snake: the tail becomes the head and it
+//            heads off the way the old tail was pointing.
 export const GAME_MODES = {
   classic: { name: 'Classic' },
   wall: { name: 'Walls' },
   portal: { name: 'Portals' },
   winged: { name: 'Winged' },
+  yinyang: { name: 'Yin Yang' },
 };
 
 // Modes where fruits move freely (x, y are the fruit's centre in cell units).
@@ -162,7 +165,22 @@ export function step(state) {
     return 'win';
   }
   refill(state);
+  if (state.mode === 'yinyang') {
+    flip(state);
+    return 'flip';
+  }
   return jump ? 'portal' : 'eat';
+}
+
+// Yin Yang: reverse the snake. The old tail becomes the head, moving away from
+// the body (the way the tail was pointing). Pending turns are dropped.
+export function flip(state) {
+  const S = state.snake.reverse();
+  state.turnQueue = [];
+  if (S.length < 2) return;
+  const dx = S[0].x - S[1].x;
+  const dy = S[0].y - S[1].y;
+  state.dir = Object.keys(DIRECTIONS).find((k) => DIRECTIONS[k].x === dx && DIRECTIONS[k].y === dy) ?? state.dir;
 }
 
 // Top fruits back up after one is eaten: replace it, or drop a new random batch.

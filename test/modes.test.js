@@ -237,3 +237,28 @@ test('winged mode: stepping onto a fruit square does not eat (only touching does
   assert.equal(step(g), 'move');
   assert.equal(g.snake[0].x, h.x + 1);
 });
+
+// ---------- yin yang ----------
+test('yin yang mode: eating flips the snake — tail becomes head, direction reverses', () => {
+  const g = running({ mode: 'yinyang', cols: 10, rows: 9 });
+  g.snake = [{ x: 5, y: 4 }, { x: 4, y: 4 }, { x: 3, y: 4 }, { x: 3, y: 5 }];
+  g.dir = 'right';
+  g.foods = [{ x: 6, y: 4 }];
+  assert.equal(step(g), 'flip');
+  // Grew to 5, then reversed: old tail (3,5) is the new head.
+  assert.deepEqual(g.snake, [{ x: 3, y: 5 }, { x: 3, y: 4 }, { x: 4, y: 4 }, { x: 5, y: 4 }, { x: 6, y: 4 }]);
+  assert.equal(g.dir, 'down', 'heading away from the body, the way the old tail pointed');
+  assert.equal(g.score, 1);
+  step(g);
+  assert.deepEqual(g.snake[0], { x: 3, y: 6 });
+});
+
+test('yin yang mode: a straight snake flips to head straight back', () => {
+  const g = running({ mode: 'yinyang', cols: 10, rows: 9 });
+  g.snake = [{ x: 5, y: 4 }, { x: 4, y: 4 }, { x: 3, y: 4 }];
+  g.dir = 'right';
+  g.foods = [{ x: 6, y: 4 }];
+  step(g);
+  assert.deepEqual(g.turnQueue, []);
+  assert.equal(g.dir, 'left');
+});

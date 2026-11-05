@@ -7,7 +7,7 @@ import {
 } from './render.js';
 import { THEMES, SKINS, DEFAULT_THEME, DEFAULT_SKIN, THEME_ICONS, shade } from './themes.js';
 import { FRUITS, DEFAULT_FRUIT, BASKET } from './fruits.js';
-import { BUNNY, TURTLE, WALL_ICON, PORTAL_ICON } from './critters.js';
+import { BUNNY, TURTLE, WALL_ICON, PORTAL_ICON, YINYANG_ICON } from './critters.js';
 import { makeFireworks, drawFireworks, drawDizzyStars } from './effects.js';
 import { sfx, isMuted, setMuted } from './sound.js';
 
@@ -313,7 +313,7 @@ function modeIcon(id) {
 
 // Classic: a tiny board with a snake heading for a fruit. The other modes are
 // simple pixel sprites: a brick wall, two offset portals.
-const MODE_SPRITES = { wall: WALL_ICON, portal: PORTAL_ICON };
+const MODE_SPRITES = { wall: WALL_ICON, portal: PORTAL_ICON, yinyang: YINYANG_ICON };
 function paintModeIcon(c) {
   const id = c.dataset.modeIcon;
   const ctx = sizeCanvas(c, 45, 45);
@@ -726,6 +726,16 @@ function doStep() {
   const before = game.foods.slice();
   const wallsBefore = game.walls.length;
   const ev = step(game);
+  if (ev === 'flip') {
+    // Yin Yang: the fruit was eaten where the head was, which is now the tail end.
+    const at = game.snake[game.snake.length - 1];
+    const f = before.find((q) => q.x === at.x && q.y === at.y);
+    eaten.push({ cx: at.x + 0.5, cy: at.y + 0.5, kind: f ? fruitKind(f) : prefs.fruit, t0: performance.now() });
+    // The body jumped ends, so hold it still for this tick instead of interpolating.
+    prevSnake = null;
+    sfx.flip();
+    updateScore();
+  }
   if (ev === 'eat' || (ev === 'win' && !FLYING_MODES.has(game.mode))) {
     const at = game.snake[0];
     const f = before.find((q) => q.x === at.x && q.y === at.y);

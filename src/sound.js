@@ -51,6 +51,12 @@ export const sfx = {
     tone(330, 0, 0.16, { type: 'triangle', vol: 0.07, to: 1320 });
     tone(660, 0.05, 0.12, { vol: 0.025, to: 1760 });
   },
+  // Yin Yang flip: a quick down-up swap.
+  flip() {
+    if (muted) return;
+    tone(880, 0, 0.07, { vol: 0.045, to: 440 });
+    tone(440, 0.07, 0.09, { vol: 0.045, to: 990 });
+  },
   // Wall drops in: a short low thunk.
   wall() {
     if (muted) return;
