@@ -1,12 +1,14 @@
-import { BOARD_SIZES, FRUIT_COUNTS, createGame, queueTurn, step } from './game.js';
 import {
-  sizeCanvas, drawBoard, drawSnake, drawFruit, drawCrown, drawScene, setBoardColors, setSnakeSkin,
+  BOARD_SIZES, FRUIT_COUNTS, SPEEDS, BASE_TICK_MS, createGame, queueTurn, step,
+} from './game.js';
+import {
+  sizeCanvas, drawBoard, drawSnake, drawSnakePath, interpolateSnake, drawFruit, drawSprite, drawCrown, drawScene, setBoardColors, setSnakeSkin,
 } from './render.js';
 import { THEMES, SKINS, DEFAULT_THEME, DEFAULT_SKIN, THEME_ICONS, shade } from './themes.js';
 import { FRUITS, DEFAULT_FRUIT } from './fruits.js';
+import { BUNNY, TURTLE } from './critters.js';
 import { sfx, isMuted, setMuted } from './sound.js';
 
-const TICK_MS = 130;
 const MAX_CELL = 56;
 const TOPBAR_H = 64;
 const DEATH_TO_MENU_MS = 900;
@@ -57,6 +59,8 @@ let acc = 0;
 let lastTime = 0;
 const foodBorn = new Map(); // "x,y" -> time the fruit appeared (for pop-in)
 let deathTimer = null;
+let prevSnake = null; // snake before the latest step (for smooth interpolation)
+let eaten = null; // fruit eaten on the latest step, shrinks as the head arrives
 let elapsedMs = 0; // stopwatch: time spent with the snake actually moving
 let timerText = '';
 
@@ -64,6 +68,8 @@ function newGame() {
   const { cols, rows } = BOARD_SIZES[sizeKey];
   game = createGame({ cols, rows, fruitCount: FRUIT_COUNTS[prefs.count] });
   foodBorn.clear();
+  prevSnake = null;
+  eaten = null;
   elapsedMs = 0;
   updateTimer();
   acc = 0;
@@ -126,7 +132,11 @@ const prefs = {
   skin: pick('snake.skin', SKINS, DEFAULT_SKIN),
   fruit: pick('snake.fruit', FRUITS, DEFAULT_FRUIT),
   count: pick('snake.count', FRUIT_COUNTS, 'one'),
+  speed: pick('snake.speed', SPEEDS, 'normal'),
 };
+
+const tickMs = () => BASE_TICK_MS * SPEEDS[prefs.speed];
+const SPEED_NAMES = { slow: 'Slow (turtle)', normal: 'Normal (snake)', fast: 'Fast (bunny)' };
 
 const COUNT_NAMES = { one: '1 fruit', three: '3 fruits', five: '5 fruits', ten: '10 fruits', random: 'Random 1–10 fruits' };
 
@@ -136,6 +146,7 @@ const SETTINGS = [
   { key: 'skin', label: 'Snake color', options: SKINS, name: (o) => o.name, icon: skinIcon },
   { key: 'fruit', label: 'Fruit', options: FRUITS, name: (o) => o.name, icon: fruitIcon },
   { key: 'count', label: 'Fruit count', options: FRUIT_COUNTS, name: (_, id) => COUNT_NAMES[id], icon: countIcon },
+  { key: 'speed', label: 'Speed', options: SPEEDS, name: (_, id) => SPEED_NAMES[id], icon: speedIcon },
 ];
 
 const SIZE_ICON_GRID = { small: 3, medium: 4, large: 6 };
@@ -240,6 +251,24 @@ function paintCountIcon(c) {
       }
       break;
   }
+}
+
+// Speed icons: turtle (slow), a little wiggling snake in the current skin (normal), bunny (fast).
+const WIGGLE = [{ x: 3, y: 0 }, { x: 2, y: 0 }, { x: 2, y: 1 }, { x: 1, y: 1 }, { x: 1, y: 2 }, { x: 0, y: 2 }];
+function speedIcon(id) {
+  const c = document.createElement('canvas');
+  if (id === 'normal') {
+    c.dataset.speedSnake = '1';
+    paintSpeedSnake(c);
+  } else {
+    drawSprite(sizeCanvas(c, 44, 44), id === 'fast' ? BUNNY : TURTLE, 0, 0, 44);
+  }
+  return c;
+}
+
+function paintSpeedSnake(c) {
+  const ctx = sizeCanvas(c, 44, 33);
+  drawSnake(ctx, WIGGLE, 11, { dir: 'right', shadow: false });
 }
 
 function paintFruitIcons() {
@@ -392,6 +421,7 @@ function choose(s, id, { scroll = true } = {}) {
       for (const c of document.querySelectorAll('[data-size-icon]')) paintSizeIcon(c);
     } else if (s.key === 'skin') {
       applySkin();
+      for (const c of document.querySelectorAll('[data-speed-snake]')) paintSpeedSnake(c);
     } else if (s.key === 'fruit') {
       paintFruitIcons();
     } else if (s.key === 'count') {
@@ -463,9 +493,30 @@ function drawGame(t) {
   }
   for (const key of foodBorn.keys()) if (!onBoard.has(key)) foodBorn.delete(key);
 
+  // How far through the current tile the snake is (0..1). Paused keeps its place.
+  const moving = game.status === 'running' || game.status === 'paused';
+  const alpha = moving && prevSnake ? Math.min(1, acc / tickMs()) : 1;
+
+  // The fruit just eaten shrinks away as the head slides onto it.
+  if (eaten && alpha < 1) {
+    const size = cell * 0.9 * (1 - alpha);
+    drawFruit(ctx, prefs.fruit, eaten.x * cell + (cell - size) / 2, eaten.y * cell + (cell - size) / 2, size);
+  }
+
   const dead = game.status === 'over';
   const live = game.status === 'running' || game.status === 'ready';
-  drawSnake(ctx, game.snake, cell, { dir: game.dir, dead, tongue: live && tongueOut(t) });
+  const opts = { dir: game.dir, dead, tongue: live && tongueOut(t) };
+  if (alpha < 1) drawSnakePath(ctx, interpolateSnake(game.snake, prevSnake, alpha), cell, opts);
+  else drawSnake(ctx, game.snake, cell, opts);
+}
+
+// Advance the game one tile.
+function doStep() {
+  prevSnake = game.snake.map((q) => ({ ...q }));
+  const ev = step(game);
+  eaten = ev === 'eat' || ev === 'win' ? { ...game.snake[0] } : null;
+  if (ev === 'eat') { sfx.eat(); updateScore(); }
+  if (ev === 'die' || ev === 'win') onGameEnd(ev);
 }
 
 function drawMenuScene(t) {
@@ -509,11 +560,10 @@ function frame(t) {
     elapsedMs += realDt;
     updateTimer();
     acc += dt;
-    while (acc >= TICK_MS && game.status === 'running') {
-      acc -= TICK_MS;
-      const ev = step(game);
-      if (ev === 'eat') { sfx.eat(); updateScore(); }
-      if (ev === 'die' || ev === 'win') onGameEnd(ev);
+    const tick = tickMs();
+    while (acc >= tick && game.status === 'running') {
+      acc -= tick;
+      doStep();
     }
   }
 
@@ -536,10 +586,18 @@ function pause() {
   setHint('Paused · Space to resume', true);
 }
 
+// Unpausing keeps the in-between-tiles progress so there's no visual jump.
 function resume() {
+  game.status = 'running';
+  setHint(null);
+}
+
+// First move: step straight away so the head starts gliding immediately.
+function start() {
   game.status = 'running';
   acc = 0;
   setHint(null);
+  doStep();
 }
 
 // ---------- input ----------
@@ -563,7 +621,7 @@ window.addEventListener('keydown', (e) => {
     if (game.status === 'ready') {
       queueTurn(game, dir);
       sfx.start();
-      resume();
+      start();
     } else if (game.status === 'running') {
       queueTurn(game, dir);
     }

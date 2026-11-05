@@ -22,14 +22,6 @@ export function setSnakeSkin(skin) {
   currentSkin = skin;
 }
 
-// Per-segment colours along the skin gradient (head -> tail).
-function segmentColors(skin, n) {
-  return Array.from({ length: n }, (_, i) => {
-    const body = skinColor(skin, n > 1 ? i / (n - 1) : 0);
-    return { body, outline: shade(body, -0.42), dot: shade(body, 0.3) };
-  });
-}
-
 // ---------- canvas helpers ----------
 export function sizeCanvas(canvas, w, h) {
   const dpr = window.devicePixelRatio || 1;
@@ -86,8 +78,12 @@ const CROWN = fromMap(
 );
 
 // Draw a fruit sprite centred in a size×size box, keeping its aspect ratio.
-export function drawFruit(ctx, kind, x, y, size, { shadow = false } = {}) {
-  const sprite = (FRUITS[kind] ?? FRUITS[DEFAULT_FRUIT]).sprite;
+export function drawFruit(ctx, kind, x, y, size, opts = {}) {
+  drawSprite(ctx, (FRUITS[kind] ?? FRUITS[DEFAULT_FRUIT]).sprite, x, y, size, opts);
+}
+
+// Draw any sprite centred in a size×size box, keeping its aspect ratio.
+export function drawSprite(ctx, sprite, x, y, size, { shadow = false } = {}) {
   const h = sprite.length;
   const w = sprite[0].length;
   const scale = size / Math.max(w, h);
@@ -119,102 +115,196 @@ export function drawBoard(ctx, cols, rows, cell) {
 }
 
 // ---------- snake ----------
+// The snake is drawn as a thick axis-aligned polyline through cell centres
+// (points in cell units, e.g. {x: 3.5, y: 2.5}). Points may be fractional,
+// which is what lets the head glide into the next cell and the tail glide out.
 const DIR_VEC = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+const BODY_W = 0.8; // body thickness, in cells
+const TAIL_W = 0.58; // the last TAIL_LEN of the body is thinner
+const TAIL_LEN = 0.45;
+const HEAD_SIZE = 0.9;
 
-function sidesConnected(seg, a, b) {
-  const s = { left: false, right: false, up: false, down: false };
-  for (const n of [a, b]) {
-    if (!n) continue;
-    if (n.x === seg.x - 1 && n.y === seg.y) s.left = true;
-    if (n.x === seg.x + 1 && n.y === seg.y) s.right = true;
-    if (n.y === seg.y - 1 && n.x === seg.x) s.up = true;
-    if (n.y === seg.y + 1 && n.x === seg.x) s.down = true;
+const centre = (c) => ({ x: c.x + 0.5, y: c.y + 0.5 });
+const dist = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y); // axis-aligned
+
+// Static snake from grid cells (menu scene, icons, ready/game-over states).
+export function drawSnake(ctx, cells, cell, opts = {}) {
+  if (!cells.length) return;
+  const pts = cells.map(centre);
+  if (opts.biteTail && cells.length > 2) {
+    // Run the tail right up to the head's edge so the loop closes.
+    const h = pts[0];
+    const t = pts[pts.length - 1];
+    pts.push({ x: (h.x + t.x) / 2, y: (h.y + t.y) / 2 });
   }
-  return s;
+  drawSnakePath(ctx, pts, cell, opts);
+  if (opts.biteTail && cells.length > 2) {
+    drawBite(ctx, cells[0], cells[cells.length - 1], cell, opts.skin ?? currentSkin);
+  }
 }
 
-// Fill a cell, inset by `inset` on sides that aren't joined to a neighbour,
-// so consecutive segments read as one continuous tube.
-function segRect(ctx, seg, cell, sides, inset, ox = 0, oy = 0) {
-  const l = sides.left ? 0 : inset;
-  const r = sides.right ? 0 : inset;
-  const t = sides.up ? 0 : inset;
-  const b = sides.down ? 0 : inset;
-  ctx.fillRect(seg.x * cell + l + ox, seg.y * cell + t + oy, cell - l - r, cell - t - b);
+// Path for a snake partway (alpha 0..1) through a move from P (before) to S (after).
+// Body cells stay put; the head slides from the previous head cell into the new
+// one and the tail slides out of the cell it just left.
+export function interpolateSnake(S, P, alpha) {
+  const c = (q) => ({ x: q.x + 0.5, y: q.y + 0.5 });
+  const lerp = (a, b, k) => ({ x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k });
+  const pts = [S.length > 1 ? lerp(c(S[1]), c(S[0]), alpha) : c(S[0])];
+  for (let i = 1; i < S.length; i++) pts.push(c(S[i]));
+  const from = P[P.length - 1];
+  const to = S[S.length - 1];
+  if (from.x !== to.x || from.y !== to.y) pts.push(lerp(c(from), c(to), alpha));
+  return pts;
 }
 
-export function drawSnake(ctx, snake, cell, { dir = 'right', dead = false, tongue = false, skin = null, shadow = true, biteTail = false } = {}) {
-  if (!snake.length) return;
-  const n = snake.length;
-  // biteTail joins head and tail so the snake forms a closed loop (used for icons).
-  const tail = snake[n - 1];
-  const sides = snake.map((s, i) => sidesConnected(
-    s,
-    snake[i - 1] ?? (biteTail ? tail : undefined),
-    snake[i + 1] ?? (biteTail ? snake[0] : undefined),
-  ));
-  const baseInset = (i) => {
-    if (i === 0) return Math.round(cell * 0.05);
-    if (i === n - 1) return Math.round(cell * 0.2);
-    return Math.round(cell * 0.1);
-  };
+// Sub-polyline between distances d0 and d1 measured from the head.
+function subPath(pts, d0, d1) {
+  const out = [];
+  let acc = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    const len = dist(a, b);
+    const s0 = Math.max(d0, acc);
+    const s1 = Math.min(d1, acc + len);
+    if (s1 >= s0 && len > 0) {
+      const at = (d) => ({ x: a.x + ((b.x - a.x) * (d - acc)) / len, y: a.y + ((b.y - a.y) * (d - acc)) / len });
+      if (!out.length) out.push(at(s0));
+      out.push(at(s1));
+    }
+    acc += len;
+  }
+  return out;
+}
+
+function pathLength(pts) {
+  let L = 0;
+  for (let i = 0; i < pts.length - 1; i++) L += dist(pts[i], pts[i + 1]);
+  return L;
+}
+
+// One straight piece of the tube. capA/capB: how far (px) to extend past each end.
+function tubeRect(ctx, a, b, w, capA, capB, cell, ox = 0, oy = 0) {
+  let x0;
+  let x1;
+  let y0;
+  let y1;
+  if (a.y === b.y) {
+    const left = a.x <= b.x ? a : b;
+    const right = left === a ? b : a;
+    x0 = left.x * cell - (left === a ? capA : capB);
+    x1 = right.x * cell + (right === a ? capA : capB);
+    y0 = a.y * cell - w / 2;
+    y1 = a.y * cell + w / 2;
+  } else {
+    const top = a.y <= b.y ? a : b;
+    const bot = top === a ? b : a;
+    y0 = top.y * cell - (top === a ? capA : capB);
+    y1 = bot.y * cell + (bot === a ? capA : capB);
+    x0 = a.x * cell - w / 2;
+    x1 = a.x * cell + w / 2;
+  }
+  const rx = Math.round(x0 + ox);
+  const ry = Math.round(y0 + oy);
+  ctx.fillRect(rx, ry, Math.round(x1 + ox) - rx, Math.round(y1 + oy) - ry);
+}
+
+export function drawSnakePath(ctx, rawPts, cell, {
+  dir = 'right', dead = false, tongue = false, skin = null, shadow = true,
+} = {}) {
+  const pts = rawPts.filter((p, i) => i === 0 || dist(p, rawPts[i - 1]) > 1e-6);
+  if (!pts.length) return;
+  const sk = skin ?? currentSkin;
+  const L = pathLength(pts);
+  const colorAt = (d) => skinColor(sk, L > 0 ? d / L : 0);
   const border = Math.max(2, Math.round(cell * 0.08));
-  const dot = Math.max(2, Math.round(cell * 0.2));
+  const wide = BODY_W * cell;
+  const thin = TAIL_W * cell;
+  const split = Math.max(0, L - TAIL_LEN);
 
-  const colors = segmentColors(skin ?? currentSkin, n);
+  // Pieces of the tube: [a, b, width, capA, capB, colour-distance]
+  const pieces = [];
+  const addRun = (run, w, d0, capStart, capEnd) => {
+    let d = d0;
+    for (let i = 0; i < run.length - 1; i++) {
+      const len = dist(run[i], run[i + 1]);
+      if (len <= 1e-6) continue;
+      const first = i === 0;
+      const last = i === run.length - 2;
+      pieces.push({
+        a: run[i], b: run[i + 1], w,
+        capA: first ? capStart : w / 2,
+        capB: last ? capEnd : w / 2,
+        mid: d + len / 2,
+      });
+      d += len;
+    }
+  };
+  addRun(subPath(pts, 0, split), wide, 0, wide / 2, 0);
+  addRun(subPath(pts, split, L), thin, split, thin / 2, thin / 2);
+
+  // Head: a slightly larger square riding on the front of the tube.
+  const h = pts[0];
+  const hs = HEAD_SIZE * cell;
+  const hx = Math.round(h.x * cell - hs / 2);
+  const hy = Math.round(h.y * cell - hs / 2);
+  const hsz = Math.round(hs);
 
   if (shadow) {
     ctx.fillStyle = PALETTE.shadow;
     const sh = Math.max(2, Math.round(cell * 0.08));
-    snake.forEach((s, i) => segRect(ctx, s, cell, sides[i], baseInset(i), 0, sh));
+    for (const p of pieces) tubeRect(ctx, p.a, p.b, p.w, p.capA, p.capB, cell, 0, sh);
+    ctx.fillRect(hx, hy + sh, hsz, hsz);
+  }
+  for (const p of pieces) {
+    ctx.fillStyle = shade(colorAt(p.mid), -0.42);
+    tubeRect(ctx, p.a, p.b, p.w, p.capA, p.capB, cell);
+  }
+  for (const p of pieces) {
+    ctx.fillStyle = colorAt(p.mid);
+    tubeRect(ctx, p.a, p.b, p.w - border * 2, Math.max(0, p.capA - border), Math.max(0, p.capB - border), cell);
   }
 
-  // Outline + body passes
-  snake.forEach((s, i) => {
-    ctx.fillStyle = colors[i].outline;
-    segRect(ctx, s, cell, sides[i], baseInset(i));
-  });
-  snake.forEach((s, i) => {
-    ctx.fillStyle = colors[i].body;
-    segRect(ctx, s, cell, sides[i], baseInset(i) + border);
-  });
-
-  if (biteTail && n > 2) drawBite(ctx, snake[0], tail, cell, baseInset(n - 1) + border, colors[n - 1].body, colors[0].outline);
-
-  // A scale dot down the middle of each body segment
-  for (let i = 1; i < n - 1; i++) {
-    const s = snake[i];
-    ctx.fillStyle = colors[i].dot;
-    const o = Math.round((cell - dot) / 2);
-    ctx.fillRect(s.x * cell + o, s.y * cell + o, dot, dot);
+  // Scale dots every cell, measured from the head, so they slide with the snake.
+  const dot = Math.max(2, Math.round(cell * 0.2));
+  for (let d = 1; d < L - 0.55; d += 1) {
+    const q = subPath(pts, d, d)[0];
+    if (!q) continue;
+    ctx.fillStyle = shade(colorAt(d), 0.3);
+    ctx.fillRect(Math.round(q.x * cell - dot / 2), Math.round(q.y * cell - dot / 2), dot, dot);
   }
 
-  drawHead(ctx, snake[0], cell, dir, { dead, tongue, ring: colors[0].outline });
+  const headCol = colorAt(0);
+  const ring = shade(headCol, -0.42);
+  ctx.fillStyle = ring;
+  ctx.fillRect(hx, hy, hsz, hsz);
+  ctx.fillStyle = headCol;
+  ctx.fillRect(hx + border, hy + border, hsz - border * 2, hsz - border * 2);
+  drawHead(ctx, h.x * cell, h.y * cell, cell, dir, { dead, tongue, ring });
 }
 
-// Tail tip disappearing into the head's mouth: a dark lip line across the
-// joint with the (narrower) tail poking through it.
-function drawBite(ctx, head, tail, cell, tailInset, tailColor, lipColor) {
+// Tail tip disappearing into the head's mouth: a dark lip line across the joint.
+function drawBite(ctx, head, tail, cell, skin) {
   const lip = Math.max(2, Math.round(cell * 0.12));
   const horizontal = head.x === tail.x; // joint runs left-right
   const jx = Math.max(head.x, tail.x) * cell;
   const jy = Math.max(head.y, tail.y) * cell;
-  const inner = cell - tailInset * 2;
   const pad = Math.round(cell * 0.12);
-  ctx.fillStyle = lipColor;
+  const border = Math.max(2, Math.round(cell * 0.08));
+  const inner = TAIL_W * cell - border * 2;
+  ctx.fillStyle = shade(skinColor(skin, 0), -0.42);
   if (horizontal) ctx.fillRect(head.x * cell + pad, jy - lip / 2, cell - pad * 2, lip);
   else ctx.fillRect(jx - lip / 2, head.y * cell + pad, lip, cell - pad * 2);
-  ctx.fillStyle = tailColor;
-  if (horizontal) ctx.fillRect(tail.x * cell + tailInset, jy - lip / 2, inner, lip);
-  else ctx.fillRect(jx - lip / 2, tail.y * cell + tailInset, lip, inner);
+  ctx.fillStyle = skinColor(skin, 1);
+  if (horizontal) ctx.fillRect(Math.round(tail.x * cell + (cell - inner) / 2), jy - lip / 2, Math.round(inner), lip);
+  else ctx.fillRect(jx - lip / 2, Math.round(tail.y * cell + (cell - inner) / 2), lip, Math.round(inner));
 }
 
-function drawHead(ctx, head, cell, dir, { dead, tongue, ring }) {
+// Eyes + tongue for a head centred at pixel (cx, cy).
+function drawHead(ctx, cx, cy, cell, dir, { dead, tongue, ring }) {
   const [dx, dy] = DIR_VEC[dir];
   const px = -dy;
   const py = dx;
-  const cx = head.x * cell + cell / 2;
-  const cy = head.y * cell + cell / 2;
 
   if (tongue && !dead) {
     const w = Math.max(2, Math.round(cell * 0.08));
