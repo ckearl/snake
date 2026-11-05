@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Snake</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="score">
+        <canvas id="score-icon" aria-hidden="true"></canvas>
+        <span id="score" aria-label="Score">0</span>
+      </div>
+      <div class="controls">
+        <button id="btn-fullscreen" class="icon-btn" aria-label="Toggle fullscreen">
+          <svg viewBox="0 0 24 24" class="when-off"><path d="M3 9V3h6M15 3h6v6M21 15v6h-6M9 21H3v-6" /></svg>
+          <svg viewBox="0 0 24 24" class="when-on"><path d="M9 3v6H3M21 9h-6V3M15 21v-6h6M3 15h6v6" /></svg>
+        </button>
+        <button id="btn-mute" class="icon-btn" aria-label="Toggle sound">
+          <svg viewBox="0 0 24 24" class="when-off"><path class="fill" d="M3 9h4l5-4v14l-5-4H3z" /><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" /></svg>
+          <svg viewBox="0 0 24 24" class="when-on"><path class="fill" d="M3 9h4l5-4v14l-5-4H3z" /><path d="M16 9l6 6M22 9l-6 6" /></svg>
+        </button>
+        <button id="btn-close" class="icon-btn" aria-label="Back to menu">
+          <svg viewBox="0 0 24 24"><path d="M5 5l14 14M19 5L5 19" /></svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="frame">
+      <div class="board-wrap">
+        <canvas id="board"></canvas>
+        <div id="hint" class="pill" hidden></div>
+      </div>
+    </main>
+
+    <div id="menu" class="overlay">
+      <div class="panel">
+        <div class="card">
+          <canvas id="scene" aria-hidden="true"></canvas>
+          <div class="stats">
+            <div class="stat"><canvas id="stat-fruit" aria-hidden="true"></canvas><span id="last-score" aria-label="Last score">0</span></div>
+            <div class="stat"><canvas id="stat-crown" aria-hidden="true"></canvas><span id="best-score" aria-label="Best score">0</span></div>
+          </div>
+        </div>
+        <button id="btn-play" class="btn">
+          <svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z" /></svg>
+          <span>Play</span>
+        </button>
+        <button id="btn-settings" class="btn">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="6.5" /><circle cx="12" cy="12" r="2.5" /><path class="teeth" d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.2 2.2M19.1 4.9l-2.2 2.2M4.9 19.1l2.2-2.2M19.1 19.1l-2.2-2.2" /></svg>
+          <span>Settings</span>
+        </button>
+      </div>
+    </div>
+
+    <div id="settings" class="overlay" hidden>
+      <div class="panel wide">
+        <div class="card settings-card">
+          <div id="settings-rows"></div>
+        </div>
+        <button id="btn-back" class="btn icon-only" aria-label="Done">
+          <svg viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5" /></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
