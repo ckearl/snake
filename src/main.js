@@ -2,11 +2,11 @@ import {
   BOARD_SIZES, FRUIT_COUNTS, SPEEDS, GAME_MODES, BASE_TICK_MS, createGame, queueTurn, step,
 } from './game.js';
 import {
-  sizeCanvas, drawBoard, drawSnake, drawSnakePath, interpolateSnake, snakePoints, drawWall, drawPortal, portalColor, drawFruit, drawSprite, drawCrown, drawScene, setBoardColors, setSnakeSkin,
+  sizeCanvas, drawBoard, drawSnake, drawSnakePath, interpolateSnake, snakePoints, drawWall, drawFruit, drawSprite, drawCrown, drawScene, setBoardColors, setSnakeSkin,
 } from './render.js';
 import { THEMES, SKINS, DEFAULT_THEME, DEFAULT_SKIN, THEME_ICONS, shade } from './themes.js';
 import { FRUITS, DEFAULT_FRUIT, BASKET } from './fruits.js';
-import { BUNNY, TURTLE, WALL_ICON, PORTAL_ICON, CHEESE_ICON } from './critters.js';
+import { BUNNY, TURTLE, WALL_ICON, PORTAL_ICON } from './critters.js';
 import { makeFireworks, drawFireworks, drawDizzyStars } from './effects.js';
 import { sfx, isMuted, setMuted } from './sound.js';
 
@@ -200,7 +200,7 @@ function fruitKind(f) {
 // can tell which ends connect. The chosen fruit is used first when it's free.
 function pairKind(pair) {
   if (pairKinds.has(pair)) return pairKinds.get(pair);
-  const live = new Set(game.foods.map((f) => f.pair));
+  const live = new Set([...game.foods.map((f) => f.pair), ...game.jumps.map((j) => j.pair)]);
   const used = new Set([...pairKinds].filter(([p]) => live.has(p)).map(([, k]) => k));
   let kind = prefs.fruit !== MIXED && !used.has(prefs.fruit) ? prefs.fruit : null;
   if (!kind) {
@@ -309,8 +309,8 @@ function modeIcon(id) {
 }
 
 // Classic: a tiny board with a snake heading for a fruit. The other modes are
-// simple pixel sprites: a brick wall, two offset portals, a wedge of cheese.
-const MODE_SPRITES = { wall: WALL_ICON, portal: PORTAL_ICON, cheese: CHEESE_ICON };
+// simple pixel sprites: a brick wall, two offset portals.
+const MODE_SPRITES = { wall: WALL_ICON, portal: PORTAL_ICON };
 function paintModeIcon(c) {
   const id = c.dataset.modeIcon;
   const ctx = sizeCanvas(c, 45, 45);
@@ -624,13 +624,13 @@ function drawGame(t) {
     drawWall(ctx, w.x, w.y, cell, p < 1 ? 0.3 + 0.85 * p - 0.15 * p * p : 1);
   }
 
-  // Open portals (body passing through) and faint rings under portal fruits.
+  // Portals in use: the pair's two fruits stay put as the portal ends until the
+  // tail has passed through.
   for (const j of game.jumps) {
-    drawPortal(ctx, j.from.x, j.from.y, cell, portalColor(j.pair), t);
-    drawPortal(ctx, j.to.x, j.to.y, cell, portalColor(j.pair), t);
-  }
-  for (const f of game.foods) {
-    if (f.pair) drawPortal(ctx, f.x, f.y, cell, portalColor(f.pair), t, { faint: true });
+    const kind = pairKind(j.pair);
+    for (const end of [j.from, j.to]) {
+      drawFruit(ctx, kind, end.x * cell + cell * 0.05, end.y * cell + cell * 0.02, cell * 0.9, { shadow: true });
+    }
   }
 
   const onBoard = new Set();
@@ -660,7 +660,7 @@ function drawGame(t) {
 
   const live = game.status === 'running' || game.status === 'ready';
   const opts = {
-    dir: game.dir, tongue: live && tongueOut(t), ms: t, jumps: game.jumps, holes: game.mode === 'cheese',
+    dir: game.dir, tongue: live && tongueOut(t), ms: t, jumps: game.jumps,
   };
 
   if (game.status === 'over' && endFx?.type === 'lose') {
@@ -699,12 +699,12 @@ function doStep() {
   const before = game.foods.slice();
   const wallsBefore = game.walls.length;
   const ev = step(game);
-  if (ev === 'eat' || ev === 'win' || ev === 'portal') {
-    // Through a portal, the fruit eaten is the entry end (the head already left it).
-    const at = ev === 'portal' ? game.jumps[game.jumps.length - 1].from : game.snake[0];
+  if (ev === 'eat' || ev === 'win') {
+    const at = game.snake[0];
     const f = before.find((q) => q.x === at.x && q.y === at.y);
     eaten = { x: at.x, y: at.y, kind: f ? fruitKind(f) : prefs.fruit };
   } else {
+    // (Portal fruits don't shrink away: they stay as the portal ends.)
     eaten = null;
   }
   if (ev === 'eat') { sfx.eat(); updateScore(); }

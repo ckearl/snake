@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createGame, step, queueTurn, spawnWall, placeFood } from '../src/game.js';
+import { createGame, step, queueTurn, spawnWall, placeFood, keepsBoardOpen } from '../src/game.js';
 
 const at = (list, p) => list.some((s) => s.x === p.x && s.y === p.y);
 
@@ -54,6 +54,52 @@ test('walls block fruit spawns', () => {
   assert.equal(placeFood(g), null);
 });
 
+test('wall mode: walls never box anything in, even when packed', () => {
+  // Keep dropping walls until no legal square is left; the board must stay
+  // one connected region with no dead-end squares the whole time.
+  for (const [cols, rows] of [[10, 9], [17, 15]]) {
+    let r = 0.123;
+    const g = running({ mode: 'wall', cols, rows, rng: () => (r = (r * 9301 + 0.49297) % 1) });
+    g.foods = [];
+    while (spawnWall(g)) {
+      assert.ok(keepsBoardOpen(g), `board stayed open with ${g.walls.length} walls`);
+    }
+    assert.ok(g.walls.length > 5, 'still managed to place a good number of walls');
+  }
+});
+
+test('wall mode: refuses a square that would cut off a corner', () => {
+  const g = running({ mode: 'wall' });
+  g.walls = [];
+  // (1,0) would leave corner (0,0) with only one open neighbour.
+  assert.equal(keepsBoardOpen(g, { x: 1, y: 0 }), false);
+  // Splitting the board in two isn't allowed either.
+  g.walls = Array.from({ length: 8 }, (_, y) => ({ x: 5, y }));
+  assert.equal(keepsBoardOpen(g, { x: 5, y: 8 }), false);
+});
+
+test('wall mode: walls count toward the win (fewer fruits needed)', () => {
+  // 5×1 board: snake fills 3, a wall fills 1 — eating the last fruit wins.
+  const g = createGame({ cols: 5, rows: 1, mode: 'wall' });
+  g.status = 'running';
+  g.walls = [{ x: 4, y: 0 }];
+  g.foods = [{ x: 3, y: 0 }];
+  assert.equal(step(g), 'win');
+});
+
+test('wall mode: a wall taking the last open square wins instead of getting stuck', () => {
+  // 3×3 board, snake 7 long; eating the 2nd fruit drops a wall. Whether the
+  // wall fits or not, the game must end in a win or leave a fruit to eat.
+  const g = createGame({ cols: 3, rows: 3, mode: 'wall' });
+  g.status = 'running';
+  g.snake = [{ x: 1, y: 1 }, { x: 0, y: 1 }, { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 2, y: 1 }, { x: 2, y: 2 }];
+  g.dir = 'down';
+  g.score = 1;
+  g.foods = [{ x: 1, y: 2 }];
+  const ev = step(g);
+  assert.ok(ev === 'win' || g.foods.length > 0, `got ${ev} with ${g.foods.length} fruits`);
+});
+
 // ---------- portal ----------
 test('portal mode: fruits spawn in matched pairs', () => {
   const g = createGame({ cols: 17, rows: 15, mode: 'portal', fruitCount: 3 });
@@ -90,28 +136,6 @@ test('portal mode: the portal closes once the tail has passed through', () => {
   // Length 4: the body needs ~4 ticks to pass, +1 lingering tick for the tail animation.
   assert.ok(open >= 3 && open <= 6, `closed after ${open} ticks`);
   assert.equal(g.status, 'running');
-});
-
-// ---------- cheese ----------
-test('cheese mode: head passes through a hole but not a solid segment', () => {
-  // Body laid out so the head's next square holds segment j.
-  const make = (j) => {
-    const g = running({ mode: 'cheese', cols: 10, rows: 9 });
-    // A long snake: head at (5,4) facing up; segment j sits at (5,3) directly above.
-    const snake = [{ x: 5, y: 4 }, { x: 5, y: 5 }, { x: 5, y: 6 }];
-    // Build a winding tail and drop segment j onto (5,3).
-    const trail = [{ x: 6, y: 6 }, { x: 6, y: 5 }, { x: 6, y: 4 }, { x: 6, y: 3 }, { x: 6, y: 2 }, { x: 5, y: 2 }, { x: 4, y: 2 }, { x: 4, y: 3 }];
-    for (const c of trail) snake.push(c);
-    snake.splice(j, 0, { x: 5, y: 3 });
-    g.snake = snake;
-    g.dir = 'right';
-    g.foods = [{ x: 0, y: 0 }];
-    queueTurn(g, 'up');
-    return g;
-  };
-  // Old index j becomes j+1 after the move: odd → solid, even → hole.
-  assert.equal(step(make(4)), 'die', 'segment 4 → 5 (solid)');
-  assert.equal(step(make(5)), 'move', 'segment 5 → 6 (hole)');
 });
 
 test('classic mode: any body segment is solid', () => {

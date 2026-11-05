@@ -14,9 +14,8 @@ Top bar: fullscreen, mute, and close (back to menu).
 
 **Game modes:**
 - **Classic** — plain snake.
-- **Walls** — every 2nd fruit eaten drops a wall block on a free square (never right in front of you). Hit it and you die.
-- **Portals** — fruits come in matched pairs (each pair a different fruit, with a coloured ring). Eat one end and your head pops out of the other; the body follows through. Fruit count = number of pairs.
-- **Cheese** — every other body segment is a hole. You can pass through your own body if you hit a hole.
+- **Walls** — every 2nd fruit eaten drops a wall block on a free square. Walls never land right in front of you and never box you in (the open squares always stay connected, with no dead ends). Walls count toward a win, so fewer fruits are needed as they appear.
+- **Portals** — fruits come in matched pairs (each pair a different fruit). Eat one end and you come straight out of the other; both fruits stay as the portal ends until your tail is through. Fruit count = number of pairs.
 
 The shuffle button at the bottom of Settings randomises every row.
 
@@ -33,7 +32,7 @@ The shuffle button at the bottom of Settings randomises every row.
 - `src/render.js` — canvas drawing: board, snake, orange/crown sprites, menu scene.
 - `src/sound.js` — WebAudio blips (eat / die / start / win jingle), mute persisted.
 - `src/effects.js` — win fireworks and dizzy stars for the loss bonk.
-- Tests: `test/game.test.js` (rules), `test/modes.test.js` (walls/portals/cheese), `test/render.test.js` (smooth movement).
+- Tests: `test/game.test.js` (rules), `test/modes.test.js` (walls/portals), `test/render.test.js` (smooth movement).
 - `src/main.js` — screens (menu, settings, play), input, game loop, layout.
 - `style.css` — layout and UI styling.
 

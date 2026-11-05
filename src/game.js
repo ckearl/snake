@@ -23,12 +23,10 @@ export const FRUIT_COUNTS = { one: 1, three: 3, five: 5, ten: 10, random: 'rando
 //  wall    – every 2nd fruit eaten drops a deadly wall block on a free square.
 //  portal  – fruits come in matching pairs; eat one and the head pops out of its
 //            twin, the body following through until the tail has passed.
-//  cheese  – every other body segment is a hole the head can pass through.
 export const GAME_MODES = {
   classic: { name: 'Classic' },
   wall: { name: 'Walls' },
   portal: { name: 'Portals' },
-  cheese: { name: 'Cheese' },
 };
 export const FRUITS_PER_WALL = 2;
 
@@ -87,10 +85,6 @@ export function queueTurn(state, dir) {
   state.turnQueue.push(dir);
 }
 
-// In cheese mode, body segment i (counted from the head after the move) is
-// solid when i is odd; even segments are holes.
-export const cheeseSolid = (i) => i % 2 === 1;
-
 // Advance one tick. Returns 'move' | 'eat' | 'portal' | 'die' | 'win' (or null if not running).
 export function step(state) {
   if (state.status !== 'running') return null;
@@ -120,12 +114,7 @@ export function step(state) {
 
   // The tail vacates its cell this tick unless we're growing, so it's safe to move into.
   const body = eating ? state.snake : state.snake.slice(0, -1);
-  const hit = body.some((s, j) => {
-    if (!same(s, newHead)) return false;
-    // After the move, old segment j becomes segment j + 1.
-    return state.mode === 'cheese' ? cheeseSolid(j + 1) : true;
-  });
-  if (hit) return die(state);
+  if (body.some((s) => same(s, newHead))) return die(state);
 
   state.snake.unshift(newHead);
   if (!eating) state.snake.pop();
@@ -137,11 +126,13 @@ export function step(state) {
   const eatenFood = state.foods[eatIdx];
   state.foods = state.foods.filter((f) => f !== eatenFood && !(jump && f.pair === eatenFood.pair));
 
+  if (state.mode === 'wall' && state.score % FRUITS_PER_WALL === 0) spawnWall(state);
+  // Checked after the wall drops: walls shrink the board, so a wall taking the
+  // last open square means there's nothing left to fill — that's a win.
   if (occupiedCount(state) >= state.cols * state.rows) {
     state.status = 'won';
     return 'win';
   }
-  if (state.mode === 'wall' && state.score % FRUITS_PER_WALL === 0) spawnWall(state);
   if (state.fruitCount === 'random') {
     if (state.foods.length === 0) spawnFoods(state, batchSize(state));
   } else {
@@ -155,9 +146,9 @@ function die(state) {
   return 'die';
 }
 
-// Squares that can never take a fruit or wall again: snake (distinct cells) + walls.
+// Squares filled by the snake or walls. The board is won when this covers every square.
 function occupiedCount(state) {
-  return new Set(state.snake.map((s) => s.y * state.cols + s.x)).size + state.walls.length;
+  return state.snake.length + state.walls.length;
 }
 
 // A portal stays open while some segment sits on its exit with the next segment
@@ -216,12 +207,69 @@ export function placeFood(state, extraBlocked = []) {
   return { x: idx % state.cols, y: Math.floor(idx / state.cols) };
 }
 
-// Wall mode: a block on a free square, never the two squares straight ahead of the head.
+// Wall mode: a block on a free square that
+//  - is never one of the two squares straight ahead of the head, and
+//  - keeps the board winnable: every open square (anything that isn't a wall,
+//    snake included) stays connected, and none becomes a dead end with fewer
+//    than two open neighbours, so the snake can never be boxed in.
+// Returns the wall, or null if no square qualifies (then no wall is added).
 export function spawnWall(state) {
   const d = DIRECTIONS[state.dir];
   const h = state.snake[0];
   const ahead = [1, 2].map((k) => ({ x: h.x + d.x * k, y: h.y + d.y * k }));
-  const w = placeFood(state, ahead);
-  if (w) state.walls.push(w);
-  return w;
+  const order = freeCells(state, ahead);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(state.rng() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  for (const idx of order) {
+    const w = { x: idx % state.cols, y: Math.floor(idx / state.cols) };
+    if (keepsBoardOpen(state, w)) {
+      state.walls.push(w);
+      return w;
+    }
+  }
+  return null;
+}
+
+export function keepsBoardOpen(state, extraWall) {
+  const { cols, rows } = state;
+  const blocked = new Uint8Array(cols * rows);
+  for (const w of state.walls) blocked[w.y * cols + w.x] = 1;
+  if (extraWall) blocked[extraWall.y * cols + extraWall.x] = 1;
+  const open = (x, y) => x >= 0 && y >= 0 && x < cols && y < rows && !blocked[y * cols + x];
+  const NB = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+  let total = 0;
+  let start = -1;
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      if (!open(x, y)) continue;
+      total++;
+      start = y * cols + x;
+      if (NB.filter(([dx, dy]) => open(x + dx, y + dy)).length < 2) return false; // dead end
+    }
+  }
+  if (!total) return false;
+  // Flood fill: every open square must be reachable from every other.
+  const seen = new Uint8Array(cols * rows);
+  const stack = [start];
+  seen[start] = 1;
+  let count = 0;
+  while (stack.length) {
+    const i = stack.pop();
+    count++;
+    const x = i % cols;
+    const y = Math.floor(i / cols);
+    for (const [dx, dy] of NB) {
+      const nx = x + dx;
+      const ny = y + dy;
+      const j = ny * cols + nx;
+      if (open(nx, ny) && !seen[j]) {
+        seen[j] = 1;
+        stack.push(j);
+      }
+    }
+  }
+  return count === total;
 }

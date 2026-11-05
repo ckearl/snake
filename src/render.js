@@ -133,37 +133,6 @@ export function drawWall(ctx, x, y, cell, scale = 1) {
   ctx.fillRect(px + b, py + b, s - b * 2, s - b * 3);
 }
 
-// Portal: a pixel ring with sparks orbiting it. (x, y) is the cell.
-const PORTAL_COLORS = ['#B46CFF', '#3FD9C9', '#FF8A3D', '#FF5FA2', '#5B8CFF', '#FFD34D', '#7BE05A'];
-export const portalColor = (pair) => PORTAL_COLORS[pair % PORTAL_COLORS.length];
-
-export function drawPortal(ctx, x, y, cell, color, ms, { faint = false } = {}) {
-  const cx = (x + 0.5) * cell;
-  const cy = (y + 0.5) * cell;
-  const u = Math.max(1, Math.round(cell / 14));
-  const r = cell * 0.42;
-  ctx.globalAlpha = faint ? 0.55 : 1;
-  // Ring made of square pixels around the centre.
-  ctx.fillStyle = shade(color, -0.35);
-  const steps = 20;
-  for (let k = 0; k < steps; k++) {
-    const a = (k / steps) * Math.PI * 2;
-    ctx.fillRect(Math.round(cx + Math.cos(a) * r) - u, Math.round(cy + Math.sin(a) * r * 0.8) - u, u * 2, u * 2);
-  }
-  ctx.fillStyle = color;
-  for (let k = 0; k < steps; k++) {
-    const a = (k / steps) * Math.PI * 2;
-    ctx.fillRect(Math.round(cx + Math.cos(a) * r * 0.8) - u, Math.round(cy + Math.sin(a) * r * 0.64) - u, u * 2, u * 2);
-  }
-  // Two sparks orbiting.
-  ctx.fillStyle = '#FFFFFF';
-  for (const off of [0, Math.PI]) {
-    const a = ms / 260 + off;
-    ctx.fillRect(Math.round(cx + Math.cos(a) * r) - u, Math.round(cy + Math.sin(a) * r * 0.8) - u, u * 2, u * 2);
-  }
-  ctx.globalAlpha = 1;
-}
-
 // ---------- snake ----------
 // The snake is drawn as a thick axis-aligned polyline through cell centres
 // (points in cell units, e.g. {x: 3.5, y: 2.5}). Points may be fractional,
@@ -222,17 +191,17 @@ function withPortalBreaks(cells, jumps, startAt = 0) {
 
 // Path for a snake partway (alpha 0..1) through a move from P (before) to S (after).
 // Body cells stay put; the head slides from the previous head cell into the new
-// one and the tail slides out of the cell it just left. Through a portal, the
-// head pops out of the exit while the neck slides into the entry.
+// one and the tail slides out of the cell it just left. Through a portal the
+// head keeps sliding into the entry fruit, then carries on out of the exit on
+// the next tick — no pause.
 export function interpolateSnake(S, P, alpha, jumps = []) {
   const c = centre;
   let pts;
   if (S.length > 1 && !isAdj(S[0], S[1])) {
-    // Teleported this tick: head at the exit, neck sliding into the entry.
+    // Teleported this tick (logically the head is already at the exit): show it
+    // still gliding into the entry so the motion never stops.
     const j = portalBetween(S[0], S[1], jumps);
-    pts = [c(S[0]), null];
-    if (j) pts.push(lerpPt(c(S[1]), c(j.from), alpha));
-    pts.push(...withPortalBreaks(S, jumps, 1));
+    pts = [j ? lerpPt(c(S[1]), c(j.from), alpha) : c(S[1]), ...withPortalBreaks(S, jumps, 1)];
   } else {
     pts = [S.length > 1 ? lerpPt(c(S[1]), c(S[0]), alpha) : c(S[0]), ...withPortalBreaks(S, jumps, 1)];
   }
@@ -305,7 +274,7 @@ function tubeRect(ctx, a, b, w, capA, capB, cell, ox = 0, oy = 0) {
 // eyes: 'normal' | 'closed' | 'dizzy' (pupils spin) | 'happy' (^ ^). ms drives the spin.
 export function drawSnakePath(ctx, rawPts, cell, {
   dir = 'right', dead = false, eyes = dead ? 'closed' : 'normal', ms = 0,
-  tongue = false, skin = null, shadow = true, holes = false,
+  tongue = false, skin = null, shadow = true,
 } = {}) {
   // Split into runs at null breaks (portals), dropping zero-length steps.
   const runs = [];
@@ -362,16 +331,6 @@ export function drawSnakePath(ctx, rawPts, cell, {
     off += lens[r];
   });
 
-  // A point `d` along the whole body (across portal breaks), or null.
-  const pointAt = (d) => {
-    let o = 0;
-    for (let r = 0; r < runs.length; r++) {
-      if (d <= o + lens[r] && lens[r] > 0) return subPath(runs[r], d - o, d - o)[0];
-      o += lens[r];
-    }
-    return null;
-  };
-
   // Head: a slightly larger square riding on the front of the tube.
   const h = runs[0][0];
   const hs = HEAD_SIZE * cell;
@@ -392,23 +351,6 @@ export function drawSnakePath(ctx, rawPts, cell, {
   for (const p of pieces) {
     ctx.fillStyle = colorAt(p.mid);
     tubeRect(ctx, p.a, p.b, p.w - border * 2, Math.max(0, p.capA - border), Math.max(0, p.capB - border), cell);
-  }
-
-  // Cheese mode: every other segment (2, 4, 6… from the head) is a hole that
-  // slides down the body with the head, showing the board through it.
-  if (holes) {
-    const hs2 = Math.round(cell * 0.5);
-    const rim = Math.max(1, Math.round(cell * 0.06));
-    for (let d = 2; d < L - 0.4; d += 2) {
-      const q = pointAt(d);
-      if (!q) continue;
-      const x = Math.round(q.x * cell - hs2 / 2);
-      const y = Math.round(q.y * cell - hs2 / 2);
-      ctx.fillStyle = shade(colorAt(d), -0.42);
-      ctx.fillRect(x - rim, y - rim, hs2 + rim * 2, hs2 + rim * 2);
-      ctx.fillStyle = PALETTE.cellA;
-      ctx.fillRect(x, y, hs2, hs2);
-    }
   }
 
   const headCol = colorAt(0);
