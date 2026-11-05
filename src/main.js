@@ -98,7 +98,6 @@ function play() {
   newGame();
   showScreen('play');
   document.activeElement?.blur();
-  setHint('Press an arrow key to start');
 }
 
 function toMenu() {

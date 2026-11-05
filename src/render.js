@@ -265,15 +265,6 @@ export function drawSnakePath(ctx, rawPts, cell, {
     tubeRect(ctx, p.a, p.b, p.w - border * 2, Math.max(0, p.capA - border), Math.max(0, p.capB - border), cell);
   }
 
-  // Scale dots every cell, measured from the head, so they slide with the snake.
-  const dot = Math.max(2, Math.round(cell * 0.2));
-  for (let d = 1; d < L - 0.55; d += 1) {
-    const q = subPath(pts, d, d)[0];
-    if (!q) continue;
-    ctx.fillStyle = shade(colorAt(d), 0.3);
-    ctx.fillRect(Math.round(q.x * cell - dot / 2), Math.round(q.y * cell - dot / 2), dot, dot);
-  }
-
   const headCol = colorAt(0);
   const ring = shade(headCol, -0.42);
   ctx.fillStyle = ring;

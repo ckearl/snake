@@ -2,9 +2,9 @@
 // future event sources (Twitch chat, channel points) can drive the same state.
 
 export const BOARD_SIZES = {
-  small: { label: 'Small', cols: 9, rows: 10 },
-  medium: { label: 'Medium', cols: 15, rows: 17 },
-  large: { label: 'Large', cols: 21, rows: 24 },
+  small: { label: 'Small', cols: 10, rows: 9 },
+  medium: { label: 'Medium', cols: 17, rows: 15 },
+  large: { label: 'Large', cols: 24, rows: 21 },
 };
 
 export const DIRECTIONS = {

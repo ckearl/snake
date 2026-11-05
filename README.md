@@ -12,7 +12,7 @@ Must be served over HTTP (not opened via `file://`) because it uses ES modules.
 **Controls:** Arrows / WASD to move · Space or P to pause · Esc for menu · T show/hide stopwatch · M mute · F fullscreen. Settings is six draggable icon strips (board size, board theme, snake color, fruit, fruit count, speed); the icon in the centre frame is the active choice. Click an icon or use arrow keys too. All saved.
 Top bar: fullscreen, mute, and close (back to menu).
 
-**Board sizes (cols × rows):** Small 9×10 · Medium 15×17 · Large 21×24
+**Board sizes (cols × rows):** Small 10×9 · Medium 17×15 · Large 24×21
 
 **Speed:** 135 ms per tile × multiplier — turtle 1.33 (180 ms), snake 1 (135 ms), bunny 0.67 (90 ms). Movement is smoothly interpolated between tiles.
 

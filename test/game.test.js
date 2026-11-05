@@ -15,7 +15,7 @@ function running(opts) {
 test('board sizes match spec', () => {
   assert.deepEqual(
     Object.values(BOARD_SIZES).map(({ cols, rows }) => [cols, rows]),
-    [[9, 10], [15, 17], [21, 24]],
+    [[10, 9], [17, 15], [24, 21]],
   );
 });
 
