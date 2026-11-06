@@ -44,6 +44,13 @@ immediately). Opening it mid-game pauses the game.
 |---|---|---|
 | `!wall` | Adds a wall block (never in front of you, never boxes you in) — any mode | 2s |
 | `!fly` | Adds a bonus winged fruit (not replaced once eaten) — any mode | 2s |
+| `!shield` | Adds a bonus fruit with one or two walls on it (Shields mode's fruit) — any mode | 3s |
+| `!key` | Adds a bonus key and the lock it opens, with a fruit inside (Keys mode) — any mode | 3s |
+| `!box` | Adds a bonus box and its own target (Box mode); it only opens on that target — any mode | 3s |
+| `!mine` | Lays a mine field with its flag (Mines mode) — any mode | 4s |
+| `!twin` | The next 5 fruits eaten each flip the snake end for end (Twin mode); another `!twin` tops it back up to 5 | 8s |
+| `!portal` | Adds a bonus portal: a linked fruit pair, eat one to come out of the other — any mode | 3s |
+| `!poison` | Adds a bonus fruit and a poison one beside it (Poison mode) — any mode | 3s |
 | `!size [small\|medium\|large\|bigger\|smaller]` | Changes the board size (random if no size given). Shrinking centres on the head; anything outside is lost | 8s |
 | `!color [name]` | Snake colour, e.g. `!color red`, `!color pink to yellow` (random if none) | 3s |
 | `!mapcolor [name]` | Board colour, e.g. `!mapcolor volcano` (random if none) | 3s |

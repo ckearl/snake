@@ -118,6 +118,7 @@ export function createGame({ cols, rows, fruitCount = 1, mode = 'classic', rng =
     mineVisit: null, // { id, n }: the field the head is in and how many moves it's been there
     cleared: [], // fields cleared by the last step (for the confetti)
     jumps: [], // portal mode: open portals { from, to, pair } while the body passes through
+    twinLeft: 0, // chat's !twin: this many more fruits flip the snake (any mode)
     nextPair: 1,
     nextId: 1,
     grow: 0, // pending growth from fruits caught between ticks (flying modes)
@@ -190,7 +191,7 @@ export function step(state) {
   // Portal: the head comes out of the eaten fruit's twin instead.
   let newHead = next;
   let jump = null;
-  if (eating && state.mode === 'portal') {
+  if (eating && state.foods[eatIdx].pair) {
     const f = state.foods[eatIdx];
     const twin = state.foods.find((o) => o !== f && o.pair === f.pair);
     if (twin) {
@@ -233,9 +234,18 @@ export function step(state) {
     if (occupiedCount(state) >= state.cols * state.rows) return win(state);
     if (push === 'bump') {
       const spot = placeBox(state);
-      // A box knocked into a wall that can't find a new spot: the board's full.
-      if (!spot) return win(state);
-      state.boxes.push({ ...spot, id: state.nextId++ });
+      const target = state.targets.find((t) => t.box === box.id);
+      if (!spot && box.bonus) {
+        // A chat box with nowhere to go just goes, target and all.
+        state.targets = state.targets.filter((t) => t !== target);
+      } else if (!spot) {
+        // A box knocked into a wall that can't find a new spot: the board's full.
+        return win(state);
+      } else {
+        const fresh = { ...spot, id: state.nextId++, ...(box.bonus && { bonus: true }) };
+        if (target) target.box = fresh.id;
+        state.boxes.push(fresh);
+      }
     }
     if (key) return 'unlock';
     // (A cleared mine field is its own event so a late turn can't undo it.)
@@ -249,7 +259,7 @@ export function step(state) {
     // Poison: no point, no growth; the snake wanders for as long as it is long.
     state.poison = state.snake.length;
     state.turnQueue = [];
-    if (!refill(state, eatenFood)) return win(state);
+    if (!eatenFood.bonus && !refill(state, eatenFood)) return win(state);
     return 'poison';
   }
   state.score += 1;
@@ -263,7 +273,8 @@ export function step(state) {
   // Modes that need room for their next thing (a box and its target) are won
   // once there isn't any.
   if (!eatenFood.bonus && !refill(state, eatenFood)) return win(state);
-  if (state.mode === 'twin') {
+  if (state.mode === 'twin' || state.twinLeft > 0) {
+    if (state.mode !== 'twin') state.twinLeft--;
     flip(state);
     return 'flip';
   }
@@ -288,11 +299,11 @@ function refill(state, eaten = null) {
   if (state.mode === 'key') {
     if (state.fruitCount !== 'random') return spawnKeyPairs(state, 1);
     // A fresh batch once every lock is open and its fruit eaten.
-    if (state.keys.length || state.foods.some((f) => f.keyed)) return true;
+    if (state.keys.some((k) => !k.bonus) || state.foods.some((f) => f.keyed && !f.bonus)) return true;
     return spawnKeyPairs(state, batchSize(state));
   }
   if (state.mode === 'box') {
-    if (!state.boxes.length && !state.foods.some((f) => f.boxed)) return spawnPuzzle(state);
+    if (!state.boxes.some((b) => !b.bonus) && !state.foods.some((f) => f.boxed && !f.bonus)) return spawnPuzzle(state);
     return true;
   }
   if (state.mode === 'poison') {
@@ -319,7 +330,9 @@ function unlock(state, key) {
   const lock = state.locks.find((l) => l.id === key.id);
   if (!lock) return;
   state.locks = state.locks.filter((l) => l !== lock);
-  state.foods.push({ x: lock.x, y: lock.y, id: state.nextId++, keyed: true, shape: lock.shape });
+  state.foods.push({
+    x: lock.x, y: lock.y, id: state.nextId++, keyed: true, shape: lock.shape, ...(lock.bonus && { bonus: true }),
+  });
 }
 
 const shuffled = (state, arr) => {
@@ -333,7 +346,7 @@ const shuffled = (state, arr) => {
 // Lay a key and its lock. The lock (solid) lands on a free square away from the
 // head where it can't wall anything off; the key on a free square away from
 // the head and not touching its lock. Returns false if there's no room for both.
-export function spawnKeyPair(state) {
+export function spawnKeyPair(state, { bonus = false } = {}) {
   const h = state.snake[0];
   const used = new Set(state.locks.map((l) => l.shape));
   const shapes = KEY_SHAPES.filter((k) => !used.has(k));
@@ -346,8 +359,9 @@ export function spawnKeyPair(state) {
   const key = cells.find((c) => !same(c, lock) && cheb(c, lock) >= 2);
   if (!key) return false;
   const id = state.nextId++;
-  state.locks.push({ ...lock, id, shape });
-  state.keys.push({ ...key, id, shape });
+  const extra = bonus ? { bonus: true } : {};
+  state.locks.push({ ...lock, id, shape, ...extra });
+  state.keys.push({ ...key, id, shape, ...extra });
   return true;
 }
 
@@ -420,11 +434,12 @@ function pushBox(state, box, dest, body) {
     state.boxes = state.boxes.filter((b) => b !== box);
     return 'bump';
   }
-  const target = state.targets.find((t) => same(t, dest));
+  // A box opens on its own target (a target with no box id takes any box).
+  const target = state.targets.find((t) => same(t, dest) && (t.box === undefined || t.box === box.id));
   if (target) {
     state.boxes = state.boxes.filter((b) => b !== box);
     state.targets = state.targets.filter((t) => t !== target);
-    state.foods.push({ x: dest.x, y: dest.y, id: state.nextId++, boxed: true });
+    state.foods.push({ x: dest.x, y: dest.y, id: state.nextId++, boxed: true, ...(box.bonus && { bonus: true }) });
     return 'release';
   }
   box.x = dest.x;
@@ -468,10 +483,11 @@ function placeTarget(state, box) {
 }
 
 // Drop a new box and its target. Returns false if there's no room for both.
-export function spawnPuzzle(state) {
+export function spawnPuzzle(state, { bonus = false } = {}) {
   const box = placeBox(state);
   if (!box) return false;
   box.id = state.nextId++;
+  if (bonus) box.bonus = true;
   state.boxes.push(box);
   const target = placeTarget(state, box);
   if (!target) {
@@ -479,6 +495,8 @@ export function spawnPuzzle(state) {
     return false;
   }
   target.id = state.nextId++;
+  target.box = box.id;
+  if (bonus) target.bonus = true;
   state.targets.push(target);
   return true;
 }
@@ -596,6 +614,7 @@ export function snapshot(state) {
     cleared: [...state.cleared],
     jumps: state.jumps.map((j) => ({ ...j, from: { ...j.from }, to: { ...j.to } })),
     grow: state.grow,
+    twinLeft: state.twinLeft,
     score: state.score,
     status: state.status,
     nextPair: state.nextPair,
@@ -776,14 +795,11 @@ function mineCells(state) {
 // ---------- poison mode ----------
 // One regular or poison fruit on a free square at least SPAWN_CLEARANCE from the head.
 export function spawnPoisonFruit(state, poison) {
-  const taken = takenCells(state);
   const h = state.snake[0];
-  const ok = [];
-  for (let y = 0; y < state.rows; y++) {
-    for (let x = 0; x < state.cols; x++) {
-      if (!taken.has(y * state.cols + x) && (!h || cheb(h, { x, y }) >= SPAWN_CLEARANCE)) ok.push({ x, y });
-    }
-  }
+  // Free squares (which keep out of mine fields while there's anywhere else).
+  const ok = freeCells(state)
+    .map((i) => ({ x: i % state.cols, y: Math.floor(i / state.cols) }))
+    .filter((c) => !h || cheb(h, c) >= SPAWN_CLEARANCE);
   if (!ok.length) return null;
   const f = ok[Math.floor(state.rng() * ok.length)];
   f.id = state.nextId++;
@@ -848,9 +864,11 @@ const TAIL = 2; // can catch up with its own retreating tail
 const LOOKAHEAD = 10; // moves
 const LOOKAHEAD_BUDGET = 300; // positions checked per candidate move
 
+// Squares the poison wander treats as solid: wall blocks, locks, mine flags and
+// boxes (it never tries to push one).
 function wallGrid(state) {
   const g = new Uint8Array(state.cols * state.rows);
-  for (const w of state.walls) g[w.y * state.cols + w.x] = 1;
+  for (const w of [...state.walls, ...state.locks, ...state.mines, ...state.boxes]) g[w.y * state.cols + w.x] = 1;
   return g;
 }
 
@@ -862,6 +880,7 @@ function simMove(state, sim, k, blocked, fruit) {
   const next = { x: h.x + d.x, y: h.y + d.y };
   if (!inBounds(state, next) || blocked[next.y * state.cols + next.x]) return null;
   const f = fruit.get(next.y * state.cols + next.x);
+  if (f?.shields?.includes(OPPOSITE[k])) return null; // a fruit's wall on this side
   const eats = f && !f.poison;
   const growing = eats || sim.grow > 0;
   const body = growing ? sim.snake : sim.snake.slice(0, -1);
@@ -956,6 +975,82 @@ export function addBonusFlyer(state) {
   return f;
 }
 
+// A bonus fruit with walls on it (shield mode's fruit, in any mode).
+export function addBonusShield(state) {
+  const f = placeAway(state);
+  if (!f) return null;
+  f.id = state.nextId++;
+  f.bonus = true;
+  addShields(state, f);
+  if (!f.shields.length) {
+    // Chat asked for a shield: make sure there is one.
+    const open = Object.keys(DIRECTIONS).filter((s) => {
+      const d = DIRECTIONS[s];
+      const c = { x: f.x + d.x, y: f.y + d.y };
+      return inBounds(state, c) && !state.walls.some((w) => same(w, c));
+    });
+    if (open.length > 1) f.shields = [open[Math.floor(state.rng() * open.length)]];
+  }
+  state.foods.push(f);
+  return f;
+}
+
+// A bonus key + lock (with its fruit), a box + target, or a portal pair. None
+// of them count toward the mode's own fruit, and none are replaced once eaten.
+export function addBonusKey(state) {
+  return spawnKeyPair(state, { bonus: true });
+}
+
+export function addBonusBox(state) {
+  return spawnPuzzle(state, { bonus: true });
+}
+
+export function addBonusPortal(state) {
+  const a = placeAway(state);
+  if (!a) return null;
+  state.foods.push(a);
+  const b = placeAway(state);
+  if (!b) {
+    state.foods.pop();
+    return null;
+  }
+  a.pair = b.pair = state.nextPair++;
+  a.id = state.nextId++;
+  b.id = state.nextId++;
+  a.bonus = b.bonus = true;
+  state.foods.push(b);
+  return [a, b];
+}
+
+// A bonus fruit and a poison one alongside it.
+export function addBonusPoison(state) {
+  const f = spawnPoisonFruit(state, false);
+  if (!f) return null;
+  const p = spawnPoisonFruit(state, true);
+  if (!p) {
+    state.foods.pop();
+    return null;
+  }
+  f.bonus = p.bonus = true;
+  return [f, p];
+}
+
+// Twin for the next few fruits: each one eaten flips the snake.
+export const CHAT_TWIN_FRUITS = 5;
+export function addTwin(state) {
+  state.twinLeft = CHAT_TWIN_FRUITS;
+  return true;
+}
+
+// A free square at least SPAWN_CLEARANCE from the head (or any free square).
+function placeAway(state) {
+  const h = state.snake[0];
+  const free = freeCells(state).map((i) => ({ x: i % state.cols, y: Math.floor(i / state.cols) }));
+  const far = free.filter((c) => !h || cheb(c, h) >= SPAWN_CLEARANCE);
+  const pool = far.length ? far : free;
+  return pool.length ? { ...pool[Math.floor(state.rng() * pool.length)] } : null;
+}
+
 // Change the board size mid-game.
 //  - Shrinking an axis: the new board is centred on the head; whatever falls
 //    outside is lost (the snake is cut off at its first segment outside).
@@ -1005,16 +1100,17 @@ export function resizeBoard(state, cols, rows) {
   }
   if (state.mode === 'box') {
     // Lost the box or its target off the edge: start a fresh one.
-    if ((!state.boxes.length || !state.targets.length) && !state.foods.some((f) => f.boxed)) {
-      state.boxes = [];
-      state.targets = [];
+    const mine = (q) => !q.bonus;
+    if ((!state.boxes.some(mine) || !state.targets.some(mine)) && !state.foods.some((f) => f.boxed && mine(f))) {
+      state.boxes = state.boxes.filter((q) => !mine(q));
+      state.targets = state.targets.filter((q) => !mine(q));
       spawnPuzzle(state);
     }
     return true;
   }
   if (state.mode === 'key') {
     // Top the key + lock pairs (and fruit already let out) back up to the count.
-    const have = state.locks.length + state.foods.filter((f) => f.keyed).length;
+    const have = state.locks.filter((l) => !l.bonus).length + state.foods.filter((f) => f.keyed && !f.bonus).length;
     if (state.fruitCount === 'random') {
       if (!have) spawnKeyPairs(state, batchSize(state));
     } else if (have < state.fruitCount) {

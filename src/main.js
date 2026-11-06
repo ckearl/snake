@@ -1,7 +1,8 @@
 import {
   BOARD_SIZES, FRUIT_COUNTS, SPEEDS, GAME_MODES, BASE_TICK_MS, MINE_LIMIT,
   createGame, queueTurn, step, redirectExit, updateFlyers, snapshot, lateTurn,
-  spawnWall, addBonusFlyer, resizeBoard,
+  spawnWall, addBonusFlyer, resizeBoard, spawnMine,
+  addBonusShield, addBonusKey, addBonusBox, addBonusPortal, addBonusPoison, addTwin, CHAT_TWIN_FRUITS,
 } from './game.js';
 import {
   sizeCanvas, drawBoard, drawSnake, drawSnakePath, interpolateSnake, snakePoints, drawWall, drawWings, drawFruit, drawSprite, drawCrown, drawScene, setBoardColors, setSnakeSkin,
@@ -1319,6 +1320,56 @@ const ACTIONS = {
     if (!addBonusFlyer(game)) return null;
     sfx.portal();
     return 'released a flying fruit';
+  },
+
+  // The other modes' pieces, dropped into whatever mode is being played.
+  shield() {
+    if (!inRound()) return null;
+    if (!addBonusShield(game)) return null;
+    sfx.wall();
+    return 'added a shielded fruit';
+  },
+
+  key() {
+    if (!inRound()) return null;
+    if (!addBonusKey(game)) return 'tried to add a key, but there was no room';
+    sfx.unlock();
+    return 'added a key and its lock';
+  },
+
+  box() {
+    if (!inRound()) return null;
+    if (!addBonusBox(game)) return 'tried to add a box, but there was no room';
+    sfx.push();
+    return 'added a box and its target';
+  },
+
+  mine() {
+    if (!inRound()) return null;
+    if (!spawnMine(game)) return 'tried to lay a mine field, but there was no room';
+    sfx.mine();
+    return 'laid a mine field';
+  },
+
+  twin() {
+    if (!inRound() || game.mode === 'twin') return null;
+    addTwin(game);
+    sfx.flip();
+    return `made the snake a twin for ${CHAT_TWIN_FRUITS} fruits`;
+  },
+
+  portal() {
+    if (!inRound()) return null;
+    if (!addBonusPortal(game)) return null;
+    sfx.portal();
+    return 'opened a portal';
+  },
+
+  poison() {
+    if (!inRound()) return null;
+    if (!addBonusPoison(game)) return null;
+    sfx.poison();
+    return 'added a fruit and a poison one';
   },
 
   size(arg) {
