@@ -299,3 +299,53 @@ export const THEME_SPRITES = {
   ocean: OCEAN_ICON,
   space: SPACE_ICON,
 };
+
+// ---------- key mode ----------
+// 7×7 masks for the key / lock shapes, and each key's colour.
+export const KEY_MASKS = {
+  circle: ['..###..', '.#####.', '#######', '#######', '#######', '.#####.', '..###..'],
+  triangle: ['...#...', '..###..', '..###..', '.#####.', '.#####.', '#######', '#######'],
+  square: ['.......', '.#####.', '.#####.', '.#####.', '.#####.', '.#####.', '.......'],
+  star: ['...#...', '..###..', '#######', '.#####.', '..###..', '.##.##.', '.#...#.'],
+  plus: ['..###..', '..###..', '#######', '#######', '#######', '..###..', '..###..'],
+  diamond: ['...#...', '..###..', '.#####.', '#######', '.#####.', '..###..', '...#...'],
+  heart: ['.##.##.', '#######', '#######', '#######', '.#####.', '..###..', '...#...'],
+  moon: ['..####.', '.###...', '###....', '###....', '###....', '.###...', '..####.'],
+  bolt: ['....##.', '...##..', '..##...', '.######', '...##..', '..##...', '.##....'],
+  drop: ['...#...', '...#...', '..###..', '.#####.', '.#####.', '.#####.', '..###..'],
+};
+export const KEY_COLORS = {
+  circle: '#FF5A5F',
+  triangle: '#FFA62B',
+  square: '#3D6BFF',
+  star: '#FFD93D',
+  plus: '#4CD964',
+  diamond: '#B57BFF',
+  heart: '#FF6FB5',
+  moon: '#F2F2F7',
+  bolt: '#2ED3B7',
+  drop: '#7FC8FF',
+};
+
+// A shape as a sprite: the mask in `color`, with a lighter top-left edge and a
+// darker bottom-right one for a bit of depth, plus an outline. 9×9.
+export function shapeSprite(shape, color, light, dark, edge) {
+  return sprite(9, 9, (px) => {
+    const rows = KEY_MASKS[shape];
+    const on = (x, y) => rows[y]?.[x] === '#';
+    rows.forEach((row, y) => [...row].forEach((ch, x) => {
+      if (ch !== '#') return;
+      px[y + 1][x + 1] = !on(x, y - 1) || !on(x - 1, y) ? light : !on(x, y + 1) || !on(x + 1, y) ? dark : color;
+    }));
+    if (edge) outline(px, edge);
+  });
+}
+
+// Keys mode icon: a grey lock with a star on it, its yellow star key beside it.
+export const KEY_MODE_ICON = sprite(16, 16, (px) => {
+  for (let y = 4; y < 15; y++) for (let x = 1; x < 12; x++) px[y][x] = y === 4 || x === 1 ? '#5A5D68' : y === 14 || x === 11 ? '#26272D' : '#3B3D45';
+  const lockStar = shapeSprite('star', '#8D909C', '#A9ACB8', '#70737E', null);
+  lockStar.forEach((row, y) => row.forEach((c, x) => { if (c && y + 5 < 15 && x + 2 < 11) px[y + 5][x + 2] = c; }));
+  const key = shapeSprite('star', '#FFD93D', '#FFF0A0', '#E0A800', '#5A3A08');
+  key.forEach((row, y) => row.forEach((c, x) => { if (c && y < 16 && x + 7 < 16) px[y][x + 7] = c; }));
+});

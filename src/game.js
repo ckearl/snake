@@ -36,6 +36,9 @@ export const FRUIT_COUNTS = { one: 1, three: 3, five: 5, ten: 10, random: 'rando
 //  mines   – every fruit eaten lays a 3×3 mine field with a flag in the middle.
 //            Touch the flag, or spend 4+ moves inside, and it's over; dip in and
 //            out within 3 moves and the field is cleared.
+//  key     – each fruit is shut in a solid grey lock marked with a shape; eat
+//            the coloured key with the same shape and the lock opens, then eat
+//            the fruit. One key + lock per fruit count.
 export const GAME_MODES = {
   classic: { name: 'Classic' },
   wall: { name: 'Walls' },
@@ -46,7 +49,11 @@ export const GAME_MODES = {
   box: { name: 'Box' },
   poison: { name: 'Poison' },
   mines: { name: 'Mines' },
+  key: { name: 'Keys' },
 };
+
+// Key mode: the shapes keys and locks come in (one pair per shape at a time).
+export const KEY_SHAPES = ['circle', 'triangle', 'square', 'star', 'plus', 'diamond', 'heart', 'moon', 'bolt', 'drop'];
 
 // Modes where fruits move freely. Flying is a per-fruit property (`fly`), so a
 // flying fruit can also be dropped into any mode (e.g. from chat). A flying
@@ -98,6 +105,8 @@ export function createGame({ cols, rows, fruitCount = 1, mode = 'classic', rng =
     pushing: false, // box mode: the last step pushed a box
     poison: 0, // poison mode: moves left before the player gets control back
     mines: [], // mines mode: { x, y, id } – flag square; the field is the 3×3 around it
+    keys: [], // key mode: { x, y, id, shape } – eat to open the lock with the same id
+    locks: [], // key mode: { x, y, id, shape } – solid until opened; holds a fruit
     blast: null, // { x, y, id }: the mine field that went off (mines mode death)
     mineVisit: null, // { id, n }: the field the head is in and how many moves it's been there
     cleared: [], // fields cleared by the last step (for the confetti)
@@ -109,6 +118,7 @@ export function createGame({ cols, rows, fruitCount = 1, mode = 'classic', rng =
     status: 'ready', // ready | running | paused | over | won
   };
   if (mode === 'box') spawnPuzzle(state);
+  else if (mode === 'key') spawnKeyPairs(state, batchSize(state));
   else spawnFoods(state, batchSize(state));
   return state;
 }
@@ -159,6 +169,7 @@ export function step(state) {
   if (state.walls.some((w) => same(w, next))) return die(state);
   const flag = state.mines.find((m) => same(m, next));
   if (flag) return explode(state, flag);
+  if (state.locks.some((l) => same(l, next))) return die(state); // still locked: solid
 
   // Flying fruits are caught continuously (updateFlyers), not by stepping onto a square.
   const eatIdx = state.foods.findIndex((f) => !f.fly && same(f, next));
@@ -192,6 +203,10 @@ export function step(state) {
     state.pushing = true;
   }
 
+  // Key mode: eating a key opens its lock, leaving the fruit on the lock's square.
+  const key = state.keys.find((k) => same(k, next));
+  if (key) unlock(state, key);
+
   state.snake.unshift(newHead);
   if (!growing) state.snake.pop();
   else if (!eating || toxic) state.grow--;
@@ -213,6 +228,7 @@ export function step(state) {
       if (!spot) return win(state);
       state.boxes.push({ ...spot, id: state.nextId++ });
     }
+    if (key) return 'unlock';
     // (A cleared mine field is its own event so a late turn can't undo it.)
     return push ?? (state.cleared.length ? 'clear' : 'move');
   }
@@ -259,6 +275,12 @@ export function flip(state) {
 // Bonus fruits (dropped in from chat) don't count toward the fruit count.
 // Returns false when the mode couldn't place what it needs (that's a win).
 function refill(state, eaten = null) {
+  if (state.mode === 'key') {
+    if (state.fruitCount !== 'random') return spawnKeyPairs(state, 1);
+    // A fresh batch once every lock is open and its fruit eaten.
+    if (state.keys.length || state.foods.some((f) => f.keyed)) return true;
+    return spawnKeyPairs(state, batchSize(state));
+  }
   if (state.mode === 'box') {
     if (!state.boxes.length && !state.foods.some((f) => f.boxed)) return spawnPuzzle(state);
     return true;
@@ -277,6 +299,50 @@ function refill(state, eaten = null) {
   } else {
     spawnFoods(state, 1);
   }
+  return true;
+}
+
+// ---------- key mode ----------
+// Eat a key: its lock goes, and the fruit it held is out on that square.
+function unlock(state, key) {
+  state.keys = state.keys.filter((k) => k !== key);
+  const lock = state.locks.find((l) => l.id === key.id);
+  if (!lock) return;
+  state.locks = state.locks.filter((l) => l !== lock);
+  state.foods.push({ x: lock.x, y: lock.y, id: state.nextId++, keyed: true, shape: lock.shape });
+}
+
+const shuffled = (state, arr) => {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(state.rng() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+};
+
+// Lay a key and its lock. The lock (solid) lands on a free square away from the
+// head where it can't wall anything off; the key on a free square away from
+// the head and not touching its lock. Returns false if there's no room for both.
+export function spawnKeyPair(state) {
+  const h = state.snake[0];
+  const used = new Set(state.locks.map((l) => l.shape));
+  const shapes = KEY_SHAPES.filter((k) => !used.has(k));
+  const pool = shapes.length ? shapes : KEY_SHAPES;
+  const shape = pool[Math.floor(state.rng() * pool.length)];
+  const cells = shuffled(state, freeCells(state).map((i) => ({ x: i % state.cols, y: Math.floor(i / state.cols) })))
+    .filter((c) => !h || cheb(c, h) >= SPAWN_CLEARANCE);
+  const lock = cells.find((c) => keepsBoardOpen(state, c));
+  if (!lock) return false;
+  const key = cells.find((c) => !same(c, lock) && cheb(c, lock) >= 2);
+  if (!key) return false;
+  const id = state.nextId++;
+  state.locks.push({ ...lock, id, shape });
+  state.keys.push({ ...key, id, shape });
+  return true;
+}
+
+export function spawnKeyPairs(state, n) {
+  for (let i = 0; i < n; i++) if (!spawnKeyPair(state)) return false;
   return true;
 }
 
@@ -366,7 +432,7 @@ export function spawnPuzzle(state) {
 function takenCells(state) {
   const c = state.cols;
   const cells = [
-    ...state.snake, ...state.walls, ...state.targets, ...state.boxes,
+    ...state.snake, ...state.walls, ...state.targets, ...state.boxes, ...state.keys, ...state.locks,
     ...state.foods.filter((f) => !f.fly),
   ];
   return new Set(cells.map((s) => s.y * c + s.x));
@@ -381,7 +447,7 @@ export function updateFlyers(state, dt, head = null) {
   if (state.status !== 'running' || !state.foods.some((f) => f.fly)) return [];
   const h = head ?? { x: state.snake[0].x + 0.5, y: state.snake[0].y + 0.5 };
   const r = FRUIT_RADIUS;
-  const obstacles = [...state.snake.slice(1), ...state.walls, ...state.boxes, ...state.mines];
+  const obstacles = [...state.snake.slice(1), ...state.walls, ...state.boxes, ...state.mines, ...state.locks];
 
   for (const f of state.foods) {
     if (!f.fly) continue;
@@ -463,6 +529,8 @@ export function snapshot(state) {
     dir: state.dir,
     turnQueue: [...state.turnQueue],
     foods: state.foods.map((f) => ({ ...f })),
+    keys: state.keys.map((k) => ({ ...k })),
+    locks: state.locks.map((l) => ({ ...l })),
     walls: state.walls.map((w) => ({ ...w })),
     boxes: state.boxes.map((b) => ({ ...b })),
     targets: state.targets.map((t) => ({ ...t })),
@@ -862,6 +930,11 @@ export function resizeBoard(state, cols, rows) {
   state.mines = state.mines.map(move).filter((m) => m.x >= 1 && m.y >= 1 && m.x < cols - 1 && m.y < rows - 1);
   if (state.mineVisit && !state.mines.some((m) => m.id === state.mineVisit.id)) state.mineVisit = null;
   state.targets = state.targets.map(move).filter(inside);
+  // A key and its lock go together: losing either loses both.
+  const keys = state.keys.map(move).filter(inside);
+  const locks = state.locks.map(move).filter(inside);
+  state.keys = keys.filter((k) => locks.some((l) => l.id === k.id));
+  state.locks = locks.filter((l) => keys.some((k) => k.id === l.id));
   state.jumps = state.jumps
     .map((j) => ({ ...j, from: move(j.from), to: move(j.to) }))
     .filter((j) => inside(j.from) && inside(j.to));
@@ -880,6 +953,16 @@ export function resizeBoard(state, cols, rows) {
       state.boxes = [];
       state.targets = [];
       spawnPuzzle(state);
+    }
+    return true;
+  }
+  if (state.mode === 'key') {
+    // Top the key + lock pairs (and fruit already let out) back up to the count.
+    const have = state.locks.length + state.foods.filter((f) => f.keyed).length;
+    if (state.fruitCount === 'random') {
+      if (!have) spawnKeyPairs(state, batchSize(state));
+    } else if (have < state.fruitCount) {
+      spawnKeyPairs(state, state.fruitCount - have);
     }
     return true;
   }
@@ -908,7 +991,8 @@ export function resizeBoard(state, cols, rows) {
 function freeCells(state, extraBlocked = []) {
   const key = (s) => Math.floor(s.y) * state.cols + Math.floor(s.x);
   const occupied = new Set(
-    [...state.snake, ...state.foods, ...state.walls, ...state.boxes, ...state.targets, ...state.mines, ...extraBlocked]
+    [...state.snake, ...state.foods, ...state.walls, ...state.boxes, ...state.targets, ...state.mines,
+      ...state.keys, ...state.locks, ...extraBlocked]
       .map(key),
   );
   const fields = new Set(mineCells(state).map(key));
@@ -955,7 +1039,7 @@ export function spawnWall(state) {
 export function keepsBoardOpen(state, extraWall) {
   const { cols, rows } = state;
   const blocked = new Uint8Array(cols * rows);
-  for (const w of state.walls) blocked[w.y * cols + w.x] = 1;
+  for (const w of [...state.walls, ...state.locks]) blocked[w.y * cols + w.x] = 1;
   if (extraWall) blocked[extraWall.y * cols + extraWall.x] = 1;
   const open = (x, y) => x >= 0 && y >= 0 && x < cols && y < rows && !blocked[y * cols + x];
   const NB = [[1, 0], [-1, 0], [0, 1], [0, -1]];

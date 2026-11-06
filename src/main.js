@@ -5,12 +5,12 @@ import {
 } from './game.js';
 import {
   sizeCanvas, drawBoard, drawSnake, drawSnakePath, interpolateSnake, snakePoints, drawWall, drawWings, drawFruit, drawSprite, drawCrown, drawScene, setBoardColors, setSnakeSkin,
-  drawBox, drawTarget, drawPoisonBubbles, isPurpleFruit, drawMineField, drawFlag, PALETTE,
+  drawBox, drawTarget, drawKey, drawLock, drawPoisonBubbles, isPurpleFruit, drawMineField, drawFlag, PALETTE,
 } from './render.js';
 import { THEMES, SKINS, DEFAULT_THEME, DEFAULT_SKIN, shade, mix, boardAccent } from './themes.js';
 import { FRUITS, DEFAULT_FRUIT, BASKET } from './fruits.js';
 import {
-  BUNNY, TURTLE, WALL_ICON, PORTAL_ICON, MAGNET_ICON, BOX, MINES_ICON, THEME_SPRITES,
+  BUNNY, TURTLE, WALL_ICON, PORTAL_ICON, MAGNET_ICON, BOX, MINES_ICON, KEY_MODE_ICON, THEME_SPRITES,
 } from './critters.js';
 import {
   makeFireworks, drawFireworks, drawDizzyStars, makeConfetti, drawConfetti, CONFETTI_MS, makeBlast, drawBlast,
@@ -115,6 +115,7 @@ const boxBorn = new Map(); // box id -> time it appeared (for pop-in)
 let boxGone = []; // boxes leaving the board: { x, y, to?, t0 } (released onto a target, or knocked away)
 const mineBorn = new Map(); // mine field id -> time it appeared (for fade-in)
 let confetti = []; // cleared mine fields: { pieces, t0 }
+let lockGone = []; // key mode: locks popping open { x, y, shape, t0 }, keys being eaten { key: true, ... }
 let deathTimer = null;
 let prevSnake = null; // snake before the latest step (for smooth interpolation)
 let endFx = null; // { type: 'lose' | 'win', t0, fireworks? }
@@ -136,6 +137,7 @@ function newGame() {
   boxGone = [];
   mineBorn.clear();
   confetti = [];
+  lockGone = [];
   wallBorn.clear();
   pairKinds.clear();
   prevSnake = null;
@@ -402,7 +404,7 @@ function modeIcon(id) {
 // Classic: a tiny board with a snake heading for a fruit. The other modes are
 // simple pixel sprites: a brick wall, two offset portals.
 const MODE_SPRITES = {
-  wall: WALL_ICON, portal: PORTAL_ICON, magnet: MAGNET_ICON, box: BOX, mines: MINES_ICON,
+  wall: WALL_ICON, portal: PORTAL_ICON, magnet: MAGNET_ICON, box: BOX, mines: MINES_ICON, key: KEY_MODE_ICON,
 };
 function paintModeIcon(c) {
   const id = c.dataset.modeIcon;
@@ -751,6 +753,8 @@ function drawGame(t) {
   }
   for (const id of mineBorn.keys()) if (!game.mines.some((m) => m.id === id)) mineBorn.delete(id);
 
+  drawKeysAndLocks(ctx, t);
+
   // How far through the current tile the snake is (0..1). Paused keeps its place.
   const moving = game.status === 'running' || game.status === 'paused';
   const alpha = moving && prevSnake ? Math.min(1, acc / tickMs()) : 1;
@@ -774,6 +778,7 @@ function drawGame(t) {
     drawFruit(ctx, fruitKind(f), cx - size / 2, cy - size / 2 - cell * 0.03, size, { shadow: !flying, poison: f.poison, lift });
     if (f.poison) drawPoisonBubbles(ctx, cx, cy, size, t, f.id ?? 0);
   }
+  drawPoppingLocks(ctx, t);
   for (const key of foodBorn.keys()) if (!onBoard.has(key)) foodBorn.delete(key);
 
   drawBoxes(ctx, t, alpha);
@@ -839,6 +844,23 @@ function fruitHop(t, id) {
   const p = ((t + id * 337) % HOP_MS) / HOP_MS;
   if (p >= 0.3) return 0;
   return Math.sin((Math.PI * p) / 0.3) * cell * 0.08;
+}
+
+// Key mode: locks (solid grey blocks) and their keys, which hop like fruit.
+// An opened lock pops up and away as its fruit appears; an eaten key shrinks.
+const LOCK_POP_MS = 320;
+function drawKeysAndLocks(ctx, t) {
+  for (const l of game.locks) drawLock(ctx, l.shape, l.x, l.y, cell);
+  lockGone = lockGone.filter((g) => t - g.t0 < (g.key ? tickMs() : LOCK_POP_MS));
+  for (const g of lockGone) {
+    if (g.key) drawKey(ctx, g.shape, g.x, g.y, cell, { scale: 1 - (t - g.t0) / tickMs() });
+  }
+  for (const k of game.keys) drawKey(ctx, k.shape, k.x, k.y, cell, { lift: fruitHop(t, k.id + 7) });
+}
+
+// Opened locks lift off over the fruit they were holding (so drawn after it).
+function drawPoppingLocks(ctx, t) {
+  for (const g of lockGone) if (!g.key) drawLock(ctx, g.shape, g.x, g.y, cell, (t - g.t0) / LOCK_POP_MS);
 }
 
 // Box mode crates. A pushed box slides along with the head; a released one
@@ -994,6 +1016,21 @@ function afterStep(ev, before, wallsBefore) {
   if (ev === 'portal') { sfx.portal(); updateScore(); }
   if (game.walls.length > wallsBefore) sfx.wall();
   if (ev === 'push') sfx.push();
+  if (ev === 'unlock') {
+    // The key that was just eaten, and the lock it opened (in the snapshot, gone now).
+    const now = performance.now();
+    const key = lastSnap?.keys.find((k) => !game.keys.some((q) => q.id === k.id));
+    const lock = key && lastSnap.locks.find((l) => l.id === key.id);
+    if (key) lockGone.push({ key: true, x: key.x, y: key.y, shape: key.shape, t0: now });
+    if (lock) {
+      lockGone.push({ x: lock.x, y: lock.y, shape: lock.shape, t0: now });
+      // The fruit pops in as the lock lifts off it.
+      const f = game.foods.find((q) => q.keyed && q.x === lock.x && q.y === lock.y);
+      if (f) foodBorn.set(f.id, now + LOCK_POP_MS * 0.3);
+    }
+    sfx.unlock();
+  }
+
   // A turn the player made (poison does its own steering, quietly).
   if (lastSnap && game.dir !== lastSnap.dir && !lastSnap.poison && ev !== 'die' && ev !== 'flip') sfx.turn(game.dir);
   if (ev === 'release' || ev === 'bump') {

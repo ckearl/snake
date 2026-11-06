@@ -1,7 +1,7 @@
 // Canvas drawing: board, snake, and pixel sprites. No game rules here.
 import { SKINS, DEFAULT_SKIN, skinColor, shade, mix } from './themes.js';
 import { FRUITS, DEFAULT_FRUIT } from './fruits.js';
-import { BOX, FLAG } from './critters.js';
+import { BOX, FLAG, KEY_COLORS, shapeSprite } from './critters.js';
 
 export const PALETTE = {
   cellA: '#B4D0F9',
@@ -194,6 +194,52 @@ export function drawWall(ctx, x, y, cell, scale = 1) {
   ctx.fillRect(px, py, s, s - b);
   ctx.fillStyle = PALETTE.wall;
   ctx.fillRect(px + b, py + b, s - b * 2, s - b * 3);
+}
+
+// ---------- key mode ----------
+const keyCache = new Map();
+function keySprite(shape) {
+  if (!keyCache.has(shape)) {
+    const c = KEY_COLORS[shape] ?? '#FFFFFF';
+    keyCache.set(shape, shapeSprite(shape, c, mix(c, '#FFFFFF', 0.45), shade(c, -0.25), shade(c, -0.62)));
+  }
+  return keyCache.get(shape);
+}
+const lockCache = new Map();
+function lockSymbol(shape) {
+  if (!lockCache.has(shape)) lockCache.set(shape, shapeSprite(shape, '#8D909C', '#A9ACB8', '#70737E', null));
+  return lockCache.get(shape);
+}
+
+// A key: its shape in its colour, sitting in its square (lift raises it off its shadow).
+export function drawKey(ctx, shape, x, y, cell, { scale = 1, lift = 0 } = {}) {
+  const size = cell * 0.98 * scale;
+  drawSprite(ctx, keySprite(shape), (x + 0.5) * cell - size / 2, (y + 0.5) * cell - size / 2, size, { shadow: true, lift });
+}
+
+// A lock: a solid dark-grey block (lit top edge, dark bottom edge) with its
+// shape stamped on it in grey. pop (0..1) lifts it up and away as it opens.
+export function drawLock(ctx, shape, x, y, cell, pop = 0) {
+  const k = 1 + 0.25 * Math.sin(Math.min(1, pop) * Math.PI * 0.5);
+  const size = cell * 0.92 * k;
+  const px = Math.round((x + 0.5) * cell - size / 2);
+  const py = Math.round((y + 0.5) * cell - size / 2 - cell * 0.45 * pop);
+  const s = Math.round(size);
+  const b = Math.max(2, Math.round(size * 0.1));
+  ctx.globalAlpha = 1 - pop;
+  if (!pop) {
+    ctx.fillStyle = PALETTE.shadow;
+    ctx.fillRect(px, py + Math.max(2, Math.round(cell * 0.08)), s, s);
+  }
+  ctx.fillStyle = '#26272D';
+  ctx.fillRect(px, py, s, s);
+  ctx.fillStyle = '#5A5D68';
+  ctx.fillRect(px, py, s, s - b);
+  ctx.fillStyle = '#3B3D45';
+  ctx.fillRect(px + b, py + b, s - b * 2, s - b * 3);
+  const sym = s * 0.62;
+  drawSprite(ctx, lockSymbol(shape), px + (s - sym) / 2, py + (s - sym) / 2 - b / 2, sym);
+  ctx.globalAlpha = 1;
 }
 
 // Box mode crate at (x, y) in cell units (fractional while it's being pushed).

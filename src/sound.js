@@ -137,6 +137,13 @@ export const sfx = {
     [1047, 1319, 1568].forEach((f, i) => tone(f, i * 0.06, 0.07, { vol: 0.035 }));
     tone(2093, 0.18, 0.18, { type: 'triangle', vol: 0.05 });
   },
+  // Key mode: a key turning (two clicks), then a soft pop as the lock opens.
+  unlock() {
+    if (muted) return;
+    tone(1400, 0, 0.025, { vol: 0.03 });
+    tone(1050, 0.045, 0.025, { vol: 0.03 });
+    tone(330, 0.09, 0.12, { type: 'triangle', vol: 0.07, to: 990 });
+  },
   start() {
     if (muted) return;
     tone(523, 0, 0.07);
