@@ -5,7 +5,7 @@ import {
 } from './game.js';
 import {
   sizeCanvas, drawBoard, drawSnake, drawSnakePath, interpolateSnake, snakePoints, drawWall, drawWings, drawFruit, drawSprite, drawCrown, drawScene, setBoardColors, setSnakeSkin,
-  drawBox, drawTarget, drawKey, drawLock, drawShield, drawPoisonBubbles, isPurpleFruit, drawMineField, drawFlag, PALETTE,
+  drawBox, drawTarget, drawKey, drawLock, drawShield, drawPoisonBubbles, isGrayFruit, drawMineField, drawFlag, PALETTE,
 } from './render.js';
 import { THEMES, SKINS, DEFAULT_THEME, DEFAULT_SKIN, shade, mix, boardAccent } from './themes.js';
 import { FRUITS, DEFAULT_FRUIT, BASKET } from './fruits.js';
@@ -284,8 +284,8 @@ function fruitKind(f) {
   if (f.pair) return pairKind(f.pair);
   if (fruitId() !== MIXED) return fruitId();
   if (!f.kind) {
-    // Poison mode: regular fruit is never a purple kind, so it can't be mistaken for poison.
-    const ids = Object.keys(FRUITS).filter((k) => !(game?.mode === 'poison' && !f.poison && isPurpleFruit(k)));
+    // Poison mode: regular fruit is never a greyish kind, so it can't be mistaken for poison.
+    const ids = Object.keys(FRUITS).filter((k) => !(game?.mode === 'poison' && !f.poison && isGrayFruit(k)));
     f.kind = ids[Math.floor(Math.random() * ids.length)];
   }
   return f.kind;

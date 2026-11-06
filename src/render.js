@@ -88,41 +88,35 @@ export function drawFruit(ctx, kind, x, y, size, opts = {}) {
   drawSprite(ctx, sprite, x, y, size, opts);
 }
 
-// Poison fruit: the same fruit, recoloured to a sickly purple by brightness
-// (so its shading survives), with green leaves/stems turned a toxic lime.
-// Fruits that are purple already (grapes, eggplant) go toxic green instead.
-const POISON_RAMP = ['#2A1236', '#4E2266', '#7A3A9A', '#A866C8', '#D6A8EC'];
-const TOXIC_RAMP = ['#1C3A0A', '#2F6A12', '#4FA21E', '#86D83A', '#C8F58A'];
+// Poison fruit: the same fruit in the poisoned snake's grey, recoloured by
+// brightness (so its shading survives), leaves and all.
+const POISON_RAMP = ['#2A2A2B', '#4A4A4B', '#6A6A6B', '#8C8C8D', '#B5B5B6'];
 const poisonCache = new Map();
 const rgbOf = (c) => {
   const n = parseInt(c.slice(1), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 };
-const isGreen = ([r, g, b]) => g > r * 1.15 && g > b * 1.15;
 
-// Is this fruit mostly purple (so a poisoned fruit could be mistaken for it)?
-export function isPurpleFruit(kind) {
-  const px = (FRUITS[kind]?.sprite ?? []).flat().filter(Boolean).map(rgbOf).filter((c) => !isGreen(c));
+// Is this fruit greyish already (so a poisoned one could be mistaken for it)?
+export function isGrayFruit(kind) {
+  const px = (FRUITS[kind]?.sprite ?? []).flat().filter(Boolean).map(rgbOf);
   if (!px.length) return false;
-  const [r, g, b] = [0, 1, 2].map((i) => px.reduce((a, c) => a + c[i], 0) / px.length);
-  return b > g * 1.2 && r > g * 1.1 && b > r * 0.55;
+  const dull = px.filter(([r, g, b]) => {
+    const mx = Math.max(r, g, b);
+    return !mx || (mx - Math.min(r, g, b)) / mx < 0.2;
+  });
+  return dull.length / px.length > 0.3;
 }
 function poisonSprite(kind) {
   if (!FRUITS[kind]) kind = DEFAULT_FRUIT;
   if (poisonCache.has(kind)) return poisonCache.get(kind);
-  // Green fruits (kiwi, broccoli…) go all purple; on the rest the leaves turn lime.
-  const filled = FRUITS[kind].sprite.flat().filter(Boolean);
-  const leafy = filled.filter((c) => isGreen(rgbOf(c))).length < filled.length * 0.35;
-  const purple = isPurpleFruit(kind);
-  const ramp = purple ? TOXIC_RAMP : POISON_RAMP;
   const sprite = FRUITS[kind].sprite.map((row) => row.map((c) => {
     if (!c) return c;
     const [r, g, b] = rgbOf(c);
     const lum = (0.3 * r + 0.59 * g + 0.11 * b) / 255;
-    if (leafy && isGreen([r, g, b])) return purple ? mix('#C77DEB', '#5A1E7A', 1 - lum) : mix('#9BE23A', '#3E7A12', 1 - lum);
-    const x = Math.min(0.999, lum * 1.1) * (ramp.length - 1);
+    const x = Math.min(0.999, lum * 1.1) * (POISON_RAMP.length - 1);
     const i = Math.floor(x);
-    return mix(ramp[i], ramp[i + 1], x - i);
+    return mix(POISON_RAMP[i], POISON_RAMP[i + 1], x - i);
   }));
   poisonCache.set(kind, sprite);
   return sprite;
