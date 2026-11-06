@@ -295,7 +295,7 @@ function tubeRect(ctx, a, b, w, capA, capB, cell, ox = 0, oy = 0) {
 // eyes: 'normal' | 'closed' | 'dizzy' (pupils spin) | 'happy' (^ ^). ms drives the spin.
 export function drawSnakePath(ctx, rawPts, cell, {
   dir = 'right', dead = false, eyes = dead ? 'closed' : 'normal', ms = 0,
-  tongue = false, skin = null, shadow = true,
+  tongue = false, skin = null, shadow = true, mouth = 0,
 } = {}) {
   // Split into runs at null breaks (portals), dropping zero-length steps.
   const runs = [];
@@ -380,7 +380,7 @@ export function drawSnakePath(ctx, rawPts, cell, {
   ctx.fillRect(hx, hy, hsz, hsz);
   ctx.fillStyle = headCol;
   ctx.fillRect(hx + border, hy + border, hsz - border * 2, hsz - border * 2);
-  drawHead(ctx, h.x * cell, h.y * cell, cell, dir, { eyes, ms, tongue: tongue && eyes === 'normal', ring });
+  drawHead(ctx, h.x * cell, h.y * cell, cell, dir, { eyes, ms, tongue: tongue && eyes === 'normal', ring, mouth });
 }
 
 // Tail tip disappearing into the head's mouth: a dark lip line across the joint.
@@ -401,7 +401,7 @@ function drawBite(ctx, head, tail, cell, skin) {
 }
 
 // Eyes + tongue for a head centred at pixel (cx, cy).
-function drawHead(ctx, cx, cy, cell, dir, { eyes, ms, tongue, ring }) {
+function drawHead(ctx, cx, cy, cell, dir, { eyes, ms, tongue, ring, mouth = 0 }) {
   const [dx, dy] = DIR_VEC[dir];
   const px = -dy;
   const py = dx;
@@ -424,11 +424,28 @@ function drawHead(ctx, cx, cy, cell, dir, { eyes, ms, tongue, ring }) {
     }
   }
 
+  // Mouth: a small dark slot set just inside the front of the head (head colour
+  // all around it), opening a little (0..1).
+  if (mouth > 0.05) {
+    const inset = Math.max(2, Math.round(cell * 0.08)) + cell * 0.07; // border + a gap
+    const front = (HEAD_SIZE * cell) / 2 - inset;
+    const width = cell * 0.3; // across the face
+    const depth = Math.max(2, cell * 0.15 * mouth); // grows back into the head
+    const fx = cx + dx * front; // front of the slot
+    const fy = cy + dy * front;
+    const w = dx ? depth : width;
+    const h = dy ? depth : width;
+    const x = dx > 0 ? fx - depth : dx < 0 ? fx : fx - width / 2;
+    const y = dy > 0 ? fy - depth : dy < 0 ? fy : fy - width / 2;
+    ctx.fillStyle = PALETTE.pupil;
+    ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+  }
+
   const eye = Math.max(4, Math.round(cell * 0.26));
   const pupil = Math.max(2, Math.round(eye * 0.5));
   [-1, 1].forEach((sgn, i) => {
-    const ex = Math.round(cx + dx * cell * 0.1 + px * sgn * cell * 0.2 - eye / 2);
-    const ey = Math.round(cy + dy * cell * 0.1 + py * sgn * cell * 0.2 - eye / 2);
+    const ex = Math.round(cx - dx * cell * 0.06 + px * sgn * cell * 0.2 - eye / 2);
+    const ey = Math.round(cy - dy * cell * 0.06 + py * sgn * cell * 0.2 - eye / 2);
 
     if (eyes === 'happy') {
       // Closed, smiling eyes: a little ^ arch, no whites.

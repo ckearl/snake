@@ -275,6 +275,41 @@ function bounceOffCell(f, c, r) {
   }
 }
 
+// ---------- hopeful turning ----------
+// The drawn snake trails the game by up to one square, so a turn pressed just
+// after the head passes a square's centre would normally land one square late.
+// Snapshot the state before each step; if a turn arrives right after a plain
+// straight move, rewind and redo that move with the turn.
+export function snapshot(state) {
+  return {
+    snake: state.snake.map((c) => ({ ...c })),
+    dir: state.dir,
+    turnQueue: [...state.turnQueue],
+    foods: state.foods.map((f) => ({ ...f })),
+    walls: state.walls.map((w) => ({ ...w })),
+    jumps: state.jumps.map((j) => ({ ...j, from: { ...j.from }, to: { ...j.to } })),
+    grow: state.grow,
+    score: state.score,
+    status: state.status,
+    nextPair: state.nextPair,
+    nextId: state.nextId,
+    justTeleported: state.justTeleported,
+    leftExit: state.leftExit,
+  };
+}
+
+// Redo the last step turning `dir` instead of going straight. `snap` is the state
+// from just before that step, `lastEvent` what the step returned. Returns the new
+// step's event, or null if a late turn isn't allowed here.
+export function lateTurn(state, snap, lastEvent, dir) {
+  if (!snap || lastEvent !== 'move' || state.status !== 'running') return null;
+  if (snap.turnQueue.length) return null; // that move already used a queued turn
+  if (!DIRECTIONS[dir] || dir === snap.dir || dir === OPPOSITE[snap.dir]) return null;
+  Object.assign(state, snapshot(snap)); // copy so the snapshot stays reusable
+  state.turnQueue = [dir];
+  return step(state);
+}
+
 // Portal grace turn: right after the head comes out of a portal exit, a turn can
 // re-aim that first move (as if it had been pressed before going in). Only when
 // the new square is safe and empty; returns true if the move was redirected.

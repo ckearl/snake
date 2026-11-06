@@ -1,6 +1,6 @@
 import {
   BOARD_SIZES, FRUIT_COUNTS, SPEEDS, GAME_MODES, BASE_TICK_MS, FLYING_MODES,
-  createGame, queueTurn, step, redirectExit, updateFlyers,
+  createGame, queueTurn, step, redirectExit, updateFlyers, snapshot, lateTurn,
 } from './game.js';
 import {
   sizeCanvas, drawBoard, drawSnake, drawSnakePath, interpolateSnake, snakePoints, drawWall, drawWings, drawFruit, drawSprite, drawCrown, drawScene, setBoardColors, setSnakeSkin,
@@ -18,6 +18,11 @@ const TOPBAR_H = 64;
 const DEATH_TO_MENU_MS = 1400; // long enough to see the bonk + dizzy eyes
 const WIN_TO_MENU_MS = 3400; // let the fireworks play out
 const BONK_MS = 220;
+// Hopeful turning: a turn pressed within this fraction of a square after the head
+// passes a square's centre still turns at that square.
+const LATE_TURN_WINDOW = 0.1;
+// Eating mouth: how long (in ticks) the mouth takes to open and close.
+const MOUTH_TICKS = 1.4;
 const SCENE_W = 340;
 const SCENE_H = 256;
 
@@ -70,6 +75,9 @@ const foodBorn = new Map(); // "x,y" -> time the fruit appeared (for pop-in)
 let deathTimer = null;
 let prevSnake = null; // snake before the latest step (for smooth interpolation)
 let endFx = null; // { type: 'lose' | 'win', t0, fireworks? }
+let lastSnap = null; // game state just before the latest step (for hopeful turning)
+let lastEv = null; // what that step did
+let mouthT0 = -1e9; // when the mouth last started opening
 let eaten = []; // fruits shrinking away after being eaten: { cx, cy, kind, t0 }
 let portalFruits = null; // { kind, from, to } – the pair just entered, shown until the head reaches it
 let elapsedMs = 0; // stopwatch: time spent with the snake actually moving
@@ -82,6 +90,9 @@ function newGame() {
   wallBorn.clear();
   pairKinds.clear();
   prevSnake = null;
+  lastSnap = null;
+  lastEv = null;
+  mouthT0 = -1e9;
   eaten = [];
   portalFruits = null;
   endFx = null;
@@ -678,8 +689,11 @@ function drawGame(t) {
   eaten = eaten.filter((e) => t - e.t0 < tickMs());
 
   const live = game.status === 'running' || game.status === 'ready';
+  // Mouth eases open and shut after eating.
+  const mk = (t - mouthT0) / (tickMs() * MOUTH_TICKS);
+  const mouth = mk >= 0 && mk < 1 ? Math.sin(Math.PI * mk) : 0;
   const opts = {
-    dir: game.dir, tongue: live && tongueOut(t), ms: t, jumps: game.jumps,
+    dir: game.dir, tongue: live && tongueOut(t) && !mouth, ms: t, jumps: game.jumps, mouth,
   };
 
   if (game.status === 'over' && endFx?.type === 'lose') {
@@ -721,15 +735,34 @@ function flyFruits(dt, t) {
     eaten.push({ cx: f.x, cy: f.y, kind: fruitKind(f), t0: t });
     sfx.eat();
   }
-  if (caught.length) updateScore();
+  if (caught.length) {
+    updateScore();
+    mouthT0 = t;
+    lastEv = 'catch'; // fruit state moved on; don't rewind this move
+  }
 }
 
 // Advance the game one tile.
 function doStep() {
   prevSnake = game.snake.map((q) => ({ ...q }));
-  const before = game.foods.slice();
-  const wallsBefore = game.walls.length;
+  lastSnap = snapshot(game);
   const ev = step(game);
+  lastEv = ev;
+  afterStep(ev, lastSnap.foods, lastSnap.walls.length);
+}
+
+// Hopeful turn: rewind the last (straight) move and redo it with this turn.
+function tryLateTurn(dir) {
+  const ev = lateTurn(game, lastSnap, lastEv, dir);
+  if (ev === null) return false;
+  lastEv = 'late'; // only once per move
+  afterStep(ev, lastSnap.foods, lastSnap.walls.length);
+  return true;
+}
+
+// Sounds, score, and animations for whatever a step just did.
+function afterStep(ev, before, wallsBefore) {
+  if (ev === 'eat' || ev === 'flip' || ev === 'portal' || ev === 'win') mouthT0 = performance.now();
   if (ev === 'flip') {
     // Yin Yang: the fruit was eaten where the head was, which is now the tail end.
     const at = game.snake[game.snake.length - 1];
@@ -868,8 +901,11 @@ window.addEventListener('keydown', (e) => {
       sfx.start();
       start();
     } else if (game.status === 'running') {
+      const progress = acc / tickMs();
+      // Pressed just after the head passed the square's centre? Turn there anyway.
+      if (progress < LATE_TURN_WINDOW && tryLateTurn(dir)) return;
       // Just popped out of a portal? Early in that move, a turn re-aims it.
-      if (game.leftExit && acc / tickMs() < 0.5 && redirectExit(game, dir)) return;
+      if (game.leftExit && progress < 0.5 && redirectExit(game, dir)) return;
       queueTurn(game, dir);
     }
     return;
@@ -923,6 +959,7 @@ document.addEventListener('fullscreenchange', () => {
 if (new URLSearchParams(location.search).has('debug')) {
   window.snakeDebug = {
     get game() { return game; },
+    get progress() { return acc / tickMs(); }, // how far the head is into its current square (0..1)
     win() { game.status = 'won'; onGameEnd('win'); },
     lose() { game.status = 'over'; onGameEnd('die'); },
   };

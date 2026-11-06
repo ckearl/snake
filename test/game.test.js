@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createGame, queueTurn, step, placeFood, BOARD_SIZES } from '../src/game.js';
+import { createGame, queueTurn, step, placeFood, BOARD_SIZES, snapshot, lateTurn } from '../src/game.js';
 
 const at = (list, p) => list.some((s) => s.x === p.x && s.y === p.y);
 
@@ -144,4 +144,49 @@ test('fruit count is capped by free space', () => {
   const g = createGame({ cols: 4, rows: 1, fruitCount: 10 });
   assert.equal(g.snake.length, 3);
   assert.deepEqual(g.foods.map(({ x, y }) => ({ x, y })), [{ x: 3, y: 0 }]);
+});
+
+// ---------- hopeful turning ----------
+test('late turn: redoes a straight move as a turn', () => {
+  const g = running({ cols: 10, rows: 9 });
+  g.foods = [{ x: 0, y: 0 }];
+  const h = { ...g.snake[0] };
+  const snap = snapshot(g);
+  const ev = step(g); // went straight (right)
+  assert.equal(ev, 'move');
+  assert.deepEqual(g.snake[0], { x: h.x + 1, y: h.y });
+  assert.equal(lateTurn(g, snap, ev, 'up'), 'move');
+  assert.deepEqual(g.snake[0], { x: h.x, y: h.y - 1 }, 'turned where intended');
+  assert.equal(g.dir, 'up');
+  assert.equal(g.snake.length, 3);
+});
+
+test('late turn: not allowed after eating, reversing, or a queued turn', () => {
+  const g = running({ cols: 10, rows: 9 });
+  const h = g.snake[0];
+  g.foods = [{ x: h.x + 1, y: h.y }];
+  let snap = snapshot(g);
+  let ev = step(g);
+  assert.equal(ev, 'eat');
+  assert.equal(lateTurn(g, snap, ev, 'up'), null, 'ate a fruit');
+
+  snap = snapshot(g);
+  ev = step(g);
+  assert.equal(lateTurn(g, snap, ev, 'left'), null, 'reverse');
+  assert.equal(lateTurn(g, snap, ev, 'right'), null, 'same direction');
+
+  queueTurn(g, 'down');
+  snap = snapshot(g);
+  ev = step(g);
+  assert.equal(lateTurn(g, snap, ev, 'left'), null, 'move already used a queued turn');
+});
+
+test('late turn: the snapshot is not consumed (copy restored)', () => {
+  const g = running({ cols: 10, rows: 9 });
+  g.foods = [{ x: 0, y: 0 }];
+  const snap = snapshot(g);
+  const ev = step(g);
+  lateTurn(g, snap, ev, 'up');
+  g.snake[0].x = 99; // mutate live state
+  assert.notEqual(snap.snake[0].x, 99);
 });
