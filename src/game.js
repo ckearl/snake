@@ -56,6 +56,17 @@ export const GAME_MODES = {
   shield: { name: 'Shields' },
 };
 
+// Blender: any set of the modes above (Classic = none of them) played at once.
+// state.modes is the set; state.mode is its key, the modes sorted and joined
+// with '+' ('classic' when empty), so a one-mode blend is just that mode.
+export const BLEND_MODES = Object.keys(GAME_MODES).filter((m) => m !== 'classic');
+export function modeSet(mode) {
+  const ids = Array.isArray(mode) ? mode : [mode];
+  return new Set(ids.filter((m) => BLEND_MODES.includes(m)));
+}
+export const modeKey = (modes) => [...modeSet([...modes])].sort().join('+') || 'classic';
+export const hasMode = (state, m) => state.modes.has(m);
+
 // Shield mode: chance of a fruit getting 0, 1 or 2 walls.
 export const SHIELD_ODDS = [0.05, 0.65, 0.3];
 
@@ -66,6 +77,13 @@ export const KEY_SHAPES = ['circle', 'triangle', 'square', 'star', 'plus', 'diam
 // flying fruit can also be dropped into any mode (e.g. from chat). A flying
 // fruit's x, y are its centre in cell units; it also has a velocity vx, vy.
 export const FLYING_MODES = new Set(['winged', 'magnet']);
+// How a blend's loose fruit moves: 'winged', 'magnet', 'both' (Winged flight
+// with a gentle Magnet pull) or null (it sits on the grid).
+export function flyKind(state) {
+  const w = hasMode(state, 'winged');
+  const m = hasMode(state, 'magnet');
+  return w && m ? 'both' : w ? 'winged' : m ? 'magnet' : null;
+}
 export const FRUIT_RADIUS = 0.34; // cells
 export const WING_SPEED = 2.2; // cells per second
 export const MAGNET_SPEED = 2; // top speed toward the head, cells per second
@@ -95,7 +113,8 @@ export function createGame({ cols, rows, fruitCount = 1, mode = 'classic', rng =
     cols,
     rows,
     rng,
-    mode,
+    modes: modeSet(mode),
+    mode: modeKey(modeSet(mode)),
     // Head first. Starts length 3, facing right.
     snake: [
       { x: startX, y: midY },
@@ -125,8 +144,8 @@ export function createGame({ cols, rows, fruitCount = 1, mode = 'classic', rng =
     score: 0,
     status: 'ready', // ready | running | paused | over | won
   };
-  if (mode === 'box') spawnPuzzle(state);
-  else if (mode === 'key') spawnKeyPairs(state, batchSize(state));
+  if (hasMode(state, 'box')) spawnPuzzle(state);
+  else if (hasMode(state, 'key')) spawnKeyPairs(state, batchSize(state));
   else spawnFoods(state, batchSize(state));
   return state;
 }
@@ -264,17 +283,17 @@ export function step(state) {
   }
   state.score += 1;
 
-  if (state.mode === 'wall' && state.score % FRUITS_PER_WALL === 0) spawnWall(state);
+  if (hasMode(state, 'wall') && state.score % FRUITS_PER_WALL === 0) spawnWall(state);
   // Mines: every fruit lays a field; no room for one any more is a win.
-  if (state.mode === 'mines' && !eatenFood.bonus && !spawnMine(state)) return win(state);
+  if (hasMode(state, 'mines') && !eatenFood.bonus && !spawnMine(state)) return win(state);
   // Checked after the wall drops: walls shrink the board, so a wall taking the
   // last open square means there's nothing left to fill — that's a win.
   if (occupiedCount(state) >= state.cols * state.rows) return win(state);
   // Modes that need room for their next thing (a box and its target) are won
   // once there isn't any.
   if (!eatenFood.bonus && !refill(state, eatenFood)) return win(state);
-  if (state.mode === 'twin' || state.twinLeft > 0) {
-    if (state.mode !== 'twin') state.twinLeft--;
+  if (hasMode(state, 'twin') || state.twinLeft > 0) {
+    if (!hasMode(state, 'twin')) state.twinLeft--;
     flip(state);
     return 'flip';
   }
@@ -296,17 +315,17 @@ export function flip(state) {
 // Bonus fruits (dropped in from chat) don't count toward the fruit count.
 // Returns false when the mode couldn't place what it needs (that's a win).
 function refill(state, eaten = null) {
-  if (state.mode === 'key') {
+  if (hasMode(state, 'key')) {
     if (state.fruitCount !== 'random') return spawnKeyPairs(state, 1);
     // A fresh batch once every lock is open and its fruit eaten.
     if (state.keys.some((k) => !k.bonus) || state.foods.some((f) => f.keyed && !f.bonus)) return true;
     return spawnKeyPairs(state, batchSize(state));
   }
-  if (state.mode === 'box') {
+  if (hasMode(state, 'box')) {
     if (!state.boxes.some((b) => !b.bonus) && !state.foods.some((f) => f.boxed && !f.bonus)) return spawnPuzzle(state);
     return true;
   }
-  if (state.mode === 'poison') {
+  if (hasMode(state, 'poison')) {
     if (state.fruitCount === 'random') {
       // A fresh batch once every regular fruit is gone (leftover poison is cleared).
       if (state.foods.some((f) => !f.bonus && !f.poison)) return true;
@@ -710,9 +729,9 @@ function batchSize(state) {
 // poison mode) on free cells. Returns false if it ran out of room.
 export function spawnFoods(state, n) {
   for (let i = 0; i < n; i++) {
-    if (state.mode === 'poison') {
+    if (hasMode(state, 'poison')) {
       if (!spawnPoisonFruit(state, false) || !spawnPoisonFruit(state, true)) return false;
-    } else if (state.mode === 'portal') {
+    } else if (hasMode(state, 'portal')) {
       const a = placeFood(state);
       if (!a) return false;
       state.foods.push(a);
@@ -729,8 +748,9 @@ export function spawnFoods(state, n) {
       const f = placeFood(state);
       if (!f) return false;
       f.id = state.nextId++;
-      if (FLYING_MODES.has(state.mode)) makeFlyer(state, f, state.mode);
-      if (state.mode === 'shield') addShields(state, f);
+      const kind = flyKind(state);
+      if (kind) makeFlyer(state, f, kind);
+      if (hasMode(state, 'shield')) addShields(state, f);
       state.foods.push(f);
     }
   }
@@ -1126,7 +1146,7 @@ export function resizeBoard(state, cols, rows) {
   while (state.walls.length && !keepsBoardOpen(state)) {
     state.walls.splice(Math.floor(state.rng() * state.walls.length), 1);
   }
-  if (state.mode === 'box') {
+  if (hasMode(state, 'box')) {
     // Lost the box or its target off the edge: start a fresh one.
     const mine = (q) => !q.bonus;
     if ((!state.boxes.some(mine) || !state.targets.some(mine)) && !state.foods.some((f) => f.boxed && mine(f))) {
@@ -1136,7 +1156,7 @@ export function resizeBoard(state, cols, rows) {
     }
     return true;
   }
-  if (state.mode === 'key') {
+  if (hasMode(state, 'key')) {
     // Top the key + lock pairs (and fruit already let out) back up to the count.
     const have = state.locks.filter((l) => !l.bonus).length + state.foods.filter((f) => f.keyed && !f.bonus).length;
     if (state.fruitCount === 'random') {
@@ -1146,7 +1166,7 @@ export function resizeBoard(state, cols, rows) {
     }
     return true;
   }
-  if (state.mode === 'poison') {
+  if (hasMode(state, 'poison')) {
     // Top each kind back up to the count.
     const n = state.fruitCount === 'random' ? 1 : state.fruitCount;
     for (const poison of [false, true]) {
@@ -1160,7 +1180,7 @@ export function resizeBoard(state, cols, rows) {
   if (state.fruitCount === 'random') {
     if (!regular.length) spawnFoods(state, batchSize(state));
   } else {
-    const have = state.mode === 'portal' ? regular.length / 2 : regular.length;
+    const have = hasMode(state, 'portal') ? regular.length / 2 : regular.length;
     if (have < state.fruitCount) spawnFoods(state, state.fruitCount - have);
   }
   return true;

@@ -1,6 +1,6 @@
 import {
   BOARD_SIZES, FRUIT_COUNTS, SPEEDS, GAME_MODES, BASE_TICK_MS, MINE_LIMIT,
-  createGame, queueTurn, step, redirectExit, updateFlyers, snapshot, lateTurn,
+  createGame, queueTurn, step, hasMode, modeKey, BLEND_MODES, redirectExit, updateFlyers, snapshot, lateTurn,
   spawnWall, addBonusFlyer, resizeBoard, spawnMine,
   addBonusFruit, addBonusShield, addBonusKey, addBonusBox, addBonusPortal, addBonusPoison, addTwin, CHAT_TWIN_FRUITS,
 } from './game.js';
@@ -292,7 +292,7 @@ function fruitKind(f) {
   if (fruitId() !== MIXED) return fruitId();
   if (!f.kind) {
     // Poison mode: regular fruit is never a greyish kind, so it can't be mistaken for poison.
-    const ids = Object.keys(FRUITS).filter((k) => !(game?.mode === 'poison' && !f.poison && isGrayFruit(k)));
+    const ids = Object.keys(FRUITS).filter((k) => !(game && hasMode(game, 'poison') && !f.poison && isGrayFruit(k)));
     f.kind = ids[Math.floor(Math.random() * ids.length)];
   }
   return f.kind;
@@ -1380,7 +1380,7 @@ const ACTIONS = {
   },
 
   twin() {
-    if (!inRound() || game.mode === 'twin') return null;
+    if (!inRound() || hasMode(game, 'twin')) return null;
     addTwin(game);
     sfx.flip();
     return `made the snake a twin for ${CHAT_TWIN_FRUITS} fruits`;
