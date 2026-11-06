@@ -1672,6 +1672,20 @@ function syncStreamPanel() {
   }
 }
 
+// Clicking the dimmed backdrop around Settings or Stream closes it. Only a
+// click that both starts and ends on the backdrop counts, so dragging a
+// settings strip and letting go outside the panel doesn't close anything.
+function closeOnBackdrop(overlay, close) {
+  let downOnBackdrop = false;
+  overlay.addEventListener('pointerdown', (e) => { downOnBackdrop = e.target === overlay; });
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay && downOnBackdrop) close();
+    downOnBackdrop = false;
+  });
+}
+closeOnBackdrop(el.settings, () => showScreen('menu'));
+closeOnBackdrop(el.stream, closeStream);
+
 $('btn-chat').addEventListener('click', openStream);
 $('btn-stream').addEventListener('click', openStream);
 $('stream-done').addEventListener('click', closeStream);
