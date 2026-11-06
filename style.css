@@ -132,6 +132,18 @@ svg .fill { fill: currentColor; stroke: none; }
 
 #board { display: block; }
 
+/* Crash shake: a few small, quickly settling jolts along the hit direction
+   (--sx, --sy), plus a hair of sideways wobble. */
+.board-wrap.shake { animation: crash-shake 0.32s 0.08s ease-out; }
+@keyframes crash-shake {
+  0% { transform: translate(0, 0); }
+  18% { transform: translate(calc(var(--sx) * 4px + var(--sy) * 1px), calc(var(--sy) * 4px + var(--sx) * 1px)); }
+  40% { transform: translate(calc(var(--sx) * -3px), calc(var(--sy) * -3px)); }
+  62% { transform: translate(calc(var(--sx) * 2px - var(--sy) * 1px), calc(var(--sy) * 2px - var(--sx) * 1px)); }
+  82% { transform: translate(calc(var(--sx) * -1px), calc(var(--sy) * -1px)); }
+  100% { transform: translate(0, 0); }
+}
+
 .pill {
   position: absolute;
   left: 50%;

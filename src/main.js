@@ -174,6 +174,7 @@ function play() {
   rollRound();
   newGame();
   setHint(null);
+  el.board.parentElement.classList.remove('shake');
   showScreen('play');
   document.activeElement?.blur();
 }
@@ -1070,7 +1071,10 @@ function onGameEnd(ev) {
   const t0 = performance.now();
   if (ev === 'die') {
     if (game.blast) sfx.boom();
-    else sfx.die();
+    else {
+      sfx.die();
+      shakeBoard(game.dir);
+    }
     endFx = { type: 'lose', t0, blast: game.blast && makeBlast(game.blast.x + 0.5, game.blast.y + 0.5) };
     deathTimer = setTimeout(() => showScreen('menu'), DEATH_TO_MENU_MS);
   } else {
@@ -1087,6 +1091,18 @@ function restart() {
   if (game.status === 'running' || game.status === 'paused') recordScore();
   if (roundPlayed) clearChatOverrides(); // as the menu would have
   play();
+}
+
+// A crash into a wall or the snake itself gives the board a gentle shake, mostly
+// along the direction it hit, timed with the bonk.
+function shakeBoard(dir) {
+  const wrap = el.board.parentElement;
+  const [x, y] = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[dir];
+  wrap.style.setProperty('--sx', x);
+  wrap.style.setProperty('--sy', y);
+  wrap.classList.remove('shake');
+  void wrap.offsetWidth; // restart the animation
+  wrap.classList.add('shake');
 }
 
 function pause() {
