@@ -5,7 +5,7 @@ import {
 } from './game.js';
 import {
   sizeCanvas, drawBoard, drawSnake, drawSnakePath, interpolateSnake, snakePoints, drawWall, drawWings, drawFruit, drawSprite, drawCrown, drawScene, setBoardColors, setSnakeSkin,
-  drawBox, drawTarget, drawKey, drawLock, drawPoisonBubbles, isPurpleFruit, drawMineField, drawFlag, PALETTE,
+  drawBox, drawTarget, drawKey, drawLock, drawShield, drawPoisonBubbles, isPurpleFruit, drawMineField, drawFlag, PALETTE,
 } from './render.js';
 import { THEMES, SKINS, DEFAULT_THEME, DEFAULT_SKIN, shade, mix, boardAccent } from './themes.js';
 import { FRUITS, DEFAULT_FRUIT, BASKET } from './fruits.js';
@@ -116,6 +116,7 @@ let boxGone = []; // boxes leaving the board: { x, y, to?, t0 } (released onto a
 const mineBorn = new Map(); // mine field id -> time it appeared (for fade-in)
 let confetti = []; // cleared mine fields: { pieces, t0 }
 let lockGone = []; // key mode: locks popping open { x, y, shape, t0 }, keys being eaten { key: true, ... }
+let shieldGone = []; // shield mode: walls fading after their fruit was eaten { x, y, side, t0 }
 let deathTimer = null;
 let prevSnake = null; // snake before the latest step (for smooth interpolation)
 let endFx = null; // { type: 'lose' | 'win', t0, fireworks? }
@@ -138,6 +139,7 @@ function newGame() {
   mineBorn.clear();
   confetti = [];
   lockGone = [];
+  shieldGone = [];
   wallBorn.clear();
   pairKinds.clear();
   prevSnake = null;
@@ -417,6 +419,17 @@ function paintModeIcon(c) {
     // A poisoned fruit, bubbling.
     drawFruit(ctx, iconFruit(0), 6, 9, 33, { poison: true });
     drawPoisonBubbles(ctx, 22.5, 25, 33, 500);
+    return;
+  }
+  if (id === 'shield') {
+    // A fruit with walls on two of its sides.
+    const C = 27;
+    ctx.save();
+    ctx.translate(9, 9);
+    drawFruit(ctx, iconFruit(0), 2, 2, C - 4);
+    drawShield(ctx, 0, 0, 'up', C);
+    drawShield(ctx, 0, 0, 'right', C);
+    ctx.restore();
     return;
   }
   if (id === 'twin') {
@@ -777,7 +790,11 @@ function drawGame(t) {
     const lift = flying ? 0 : fruitHop(t, f.id ?? f.x * 31 + f.y);
     drawFruit(ctx, fruitKind(f), cx - size / 2, cy - size / 2 - cell * 0.03, size, { shadow: !flying, poison: f.poison, lift });
     if (f.poison) drawPoisonBubbles(ctx, cx, cy, size, t, f.id ?? 0);
+    for (const side of f.shields ?? []) drawShield(ctx, f.x, f.y, side, cell, Math.min(1, p * 1.5));
   }
+  // Walls whose fruit was just eaten fade away.
+  shieldGone = shieldGone.filter((g) => t - g.t0 < 220);
+  for (const g of shieldGone) drawShield(ctx, g.x, g.y, g.side, cell, 1 - (t - g.t0) / 220);
   drawPoppingLocks(ctx, t);
   for (const key of foodBorn.keys()) if (!onBoard.has(key)) foodBorn.delete(key);
 
@@ -1030,7 +1047,15 @@ function afterStep(ev, before, wallsBefore) {
     }
     sfx.unlock();
   }
-
+  // Shield mode: the eaten fruit's walls (and any it shared) fade out.
+  if (ev === 'eat' && lastSnap) {
+    const now = performance.now();
+    for (const f of lastSnap.foods) {
+      if (!f.shields?.length) continue;
+      const after = game.foods.find((q) => q.id === f.id);
+      for (const side of f.shields) if (!after?.shields?.includes(side)) shieldGone.push({ x: f.x, y: f.y, side, t0: now });
+    }
+  }
   // A turn the player made (poison does its own steering, quietly).
   if (lastSnap && game.dir !== lastSnap.dir && !lastSnap.poison && ev !== 'die' && ev !== 'flip') sfx.turn(game.dir);
   if (ev === 'release' || ev === 'bump') {

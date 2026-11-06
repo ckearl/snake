@@ -39,6 +39,9 @@ export const FRUIT_COUNTS = { one: 1, three: 3, five: 5, ten: 10, random: 'rando
 //  key     – each fruit is shut in a solid grey lock marked with a shape; eat
 //            the coloured key with the same shape and the lock opens, then eat
 //            the fruit. One key + lock per fruit count.
+//  shield  – each fruit has 0–2 short walls along its sides. Hit one head-on
+//            and it's over; eat the fruit through an open side and every wall
+//            touching its square goes (a neighbouring fruit's shared wall too).
 export const GAME_MODES = {
   classic: { name: 'Classic' },
   wall: { name: 'Walls' },
@@ -50,6 +53,7 @@ export const GAME_MODES = {
   poison: { name: 'Poison' },
   mines: { name: 'Mines' },
   key: { name: 'Keys' },
+  shield: { name: 'Shields' },
 };
 
 // Key mode: the shapes keys and locks come in (one pair per shape at a time).
@@ -174,6 +178,8 @@ export function step(state) {
   // Flying fruits are caught continuously (updateFlyers), not by stepping onto a square.
   const eatIdx = state.foods.findIndex((f) => !f.fly && same(f, next));
   const eating = eatIdx !== -1;
+  // Shield mode: a fruit's wall on the side the head comes in by is solid.
+  if (eating && state.foods[eatIdx].shields?.includes(OPPOSITE[state.dir])) return die(state);
   // Poison fruit doesn't make you longer.
   const toxic = eating && !!state.foods[eatIdx].poison;
   const growing = (eating && !toxic) || state.grow > 0;
@@ -235,6 +241,7 @@ export function step(state) {
 
   const eatenFood = state.foods[eatIdx];
   state.foods = state.foods.filter((f) => f !== eatenFood && !(jump && f.pair === eatenFood.pair));
+  if (eatenFood.shields) dropShields(state, eatenFood);
   if (toxic) {
     // Poison: no point, no growth; the snake wanders for as long as it is long.
     state.poison = state.snake.length;
@@ -344,6 +351,49 @@ export function spawnKeyPair(state) {
 export function spawnKeyPairs(state, n) {
   for (let i = 0; i < n; i++) if (!spawnKeyPair(state)) return false;
   return true;
+}
+
+// ---------- shield mode ----------
+// Give a new fruit 0, 1 or 2 walls along its sides. Only sides that face an
+// open square on the board get one (a wall against the edge or a wall block
+// would mean nothing), never a side facing right where the head is about to
+// be, and at least one side facing open, non-fruit ground is always left free
+// so the fruit can be eaten.
+export function addShields(state, f) {
+  const h = state.snake[0];
+  const blocked = (c) => !inBounds(state, c) || state.walls.some((w) => same(w, c)) || state.locks.some((l) => same(l, c));
+  const sides = Object.keys(DIRECTIONS).map((s) => {
+    const d = DIRECTIONS[s];
+    const c = { x: f.x + d.x, y: f.y + d.y };
+    return {
+      s,
+      open: !blocked(c),
+      entry: !blocked(c) && !state.foods.some((o) => !o.fly && same(o, c)),
+      nearHead: !!h && Math.abs(c.x - h.x) + Math.abs(c.y - h.y) <= 2,
+    };
+  });
+  const want = Math.floor(state.rng() * 3);
+  const options = shuffled(state, sides.filter((x) => x.open && !x.nearHead));
+  const chosen = [];
+  for (const o of options) {
+    if (chosen.length >= want) break;
+    const left = sides.filter((x) => x.entry && x !== o && !chosen.includes(x));
+    if (left.length) chosen.push(o);
+  }
+  f.shields = chosen.map((x) => x.s);
+  return f;
+}
+
+// An eaten fruit takes every wall touching its square with it: its own, and a
+// neighbouring fruit's wall on the side they share.
+function dropShields(state, eaten) {
+  for (const o of state.foods) {
+    if (!o.shields?.length || o.fly) continue;
+    for (const s of Object.keys(DIRECTIONS)) {
+      const d = DIRECTIONS[s];
+      if (o.x + d.x === eaten.x && o.y + d.y === eaten.y) o.shields = o.shields.filter((q) => q !== s);
+    }
+  }
 }
 
 // ---------- box mode ----------
@@ -528,7 +578,7 @@ export function snapshot(state) {
     snake: state.snake.map((c) => ({ ...c })),
     dir: state.dir,
     turnQueue: [...state.turnQueue],
-    foods: state.foods.map((f) => ({ ...f })),
+    foods: state.foods.map((f) => ({ ...f, ...(f.shields && { shields: [...f.shields] }) })),
     keys: state.keys.map((k) => ({ ...k })),
     locks: state.locks.map((l) => ({ ...l })),
     walls: state.walls.map((w) => ({ ...w })),
@@ -645,6 +695,7 @@ export function spawnFoods(state, n) {
       if (!f) return false;
       f.id = state.nextId++;
       if (FLYING_MODES.has(state.mode)) makeFlyer(state, f, state.mode);
+      if (state.mode === 'shield') addShields(state, f);
       state.foods.push(f);
     }
   }

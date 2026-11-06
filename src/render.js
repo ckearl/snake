@@ -242,6 +242,34 @@ export function drawLock(ctx, shape, x, y, cell, pop = 0) {
   ctx.globalAlpha = 1;
 }
 
+// ---------- shield mode ----------
+// A fruit's wall: a short block lying along one side of its square, centred
+// on the line between the squares, in the board's wall colour.
+export function drawShield(ctx, x, y, side, cell, alpha = 1) {
+  const t = Math.max(5, Math.round(cell * 0.26));
+  const len = Math.round(cell + t * 0.5);
+  const horizontal = side === 'up' || side === 'down';
+  const cx = (x + 0.5) * cell + (side === 'left' ? -0.5 : side === 'right' ? 0.5 : 0) * cell;
+  const cy = (y + 0.5) * cell + (side === 'up' ? -0.5 : side === 'down' ? 0.5 : 0) * cell;
+  const w = horizontal ? len : t;
+  const h = horizontal ? t : len;
+  const px = Math.round(cx - w / 2);
+  const py = Math.round(cy - h / 2);
+  const b = Math.max(1, Math.round(t * 0.25));
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = PALETTE.shadow;
+  ctx.fillRect(px, py + Math.max(2, Math.round(cell * 0.06)), w, h);
+  // A touch lighter than wall blocks: thin, so it needs the extra contrast.
+  const base = shade(PALETTE.wall, 0.22);
+  ctx.fillStyle = shade(PALETTE.wall, -0.4);
+  ctx.fillRect(px, py, w, h);
+  ctx.fillStyle = shade(base, 0.35);
+  ctx.fillRect(px, py, w, h - b);
+  ctx.fillStyle = base;
+  ctx.fillRect(px + b, py + b, w - b * 2, h - b * 2);
+  ctx.globalAlpha = 1;
+}
+
 // Box mode crate at (x, y) in cell units (fractional while it's being pushed).
 export function drawBox(ctx, x, y, cell, scale = 1, alpha = 1) {
   const size = cell * 0.98 * scale;
