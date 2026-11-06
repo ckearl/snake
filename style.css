@@ -285,6 +285,7 @@ svg .fill { fill: currentColor; stroke: none; }
 }
 .tile svg { width: 30px; height: 30px; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2; pointer-events: none; }
 .tile canvas { display: block; pointer-events: none; }
+.tile .theme-glyph { margin-bottom: 12px; } /* sit above the strip of board squares */
 
 .btn.icon-only svg { position: static; transform: none; width: 32px; height: 32px; stroke-width: 3; }
 

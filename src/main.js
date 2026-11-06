@@ -7,10 +7,10 @@ import {
   sizeCanvas, drawBoard, drawSnake, drawSnakePath, interpolateSnake, snakePoints, drawWall, drawWings, drawFruit, drawSprite, drawCrown, drawScene, setBoardColors, setSnakeSkin,
   drawBox, drawTarget, drawPoisonBubbles, isPurpleFruit, drawMineField, drawFlag, PALETTE,
 } from './render.js';
-import { THEMES, SKINS, DEFAULT_THEME, DEFAULT_SKIN, THEME_ICONS, shade, mix, boardAccent } from './themes.js';
+import { THEMES, SKINS, DEFAULT_THEME, DEFAULT_SKIN, shade, mix, boardAccent } from './themes.js';
 import { FRUITS, DEFAULT_FRUIT, BASKET } from './fruits.js';
 import {
-  BUNNY, TURTLE, WALL_ICON, PORTAL_ICON, YINYANG_ICON, MAGNET_ICON, BOX, MINES_ICON,
+  BUNNY, TURTLE, WALL_ICON, PORTAL_ICON, YINYANG_ICON, MAGNET_ICON, BOX, MINES_ICON, THEME_SPRITES,
 } from './critters.js';
 import {
   makeFireworks, drawFireworks, drawDizzyStars, makeConfetti, drawConfetti, CONFETTI_MS, makeBlast, drawBlast,
@@ -343,17 +343,17 @@ function paintSizeIcon(c) {
   }
 }
 
-// Theme glyph on the theme's top-bar colour, with a strip of its board squares.
+// Pixel glyph on the theme's top-bar colour, with a strip of its board squares.
 function themeIcon(id, tile) {
   const t = THEMES[id];
   tile.classList.add('theme');
   tile.style.background =
     `linear-gradient(90deg, ${t.light} 50%, ${t.dark} 50%) bottom / 100% 14px no-repeat, ${t.topBar}`;
   tile.style.boxShadow = `inset 0 0 0 2px ${t.margins}`;
-  const svg = document.createElementNS(SVG_NS, 'svg');
-  svg.setAttribute('viewBox', '0 0 24 24');
-  svg.innerHTML = THEME_ICONS[t.icon];
-  return svg;
+  const c = document.createElement('canvas');
+  c.className = 'theme-glyph';
+  drawSprite(sizeCanvas(c, 32, 32), THEME_SPRITES[t.icon], 0, 0, 32);
+  return c;
 }
 
 // The snake curled into a loop, head about to eat its own tail.

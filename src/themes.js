@@ -69,18 +69,6 @@ export function shade(hex, amt) {
   return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
 }
 
-// Theme icons: 24×24 SVG line drawings.
-export const THEME_ICONS = {
-  sun: '<circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1"/>',
-  moon: '<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a6.8 6.8 0 0 0 10.5 10.5z"/>',
-  snowflake: '<path d="M12 2v20M3.3 7l17.4 10M3.3 17l17.4-10M9 3.5l3 2.5 3-2.5M9 20.5l3-2.5 3 2.5"/>',
-  volcano: '<path d="M2 21l6.5-10h7L22 21z"/><path d="M10 11l2 3 2-3"/><path d="M10.5 7c-1-1.5 1-2.5 0-4M14 7c-1-1.5 1-2.5 0-4"/>',
-  desert: '<path d="M10 21V6a2 2 0 0 1 4 0v15"/><path d="M10 13H7.5A2 2 0 0 1 5.5 11V8.5M14 15h2.5a2 2 0 0 0 2-2v-2.5"/><path d="M3 21h18"/>',
-  forest: '<path d="M12 2.5L6.5 10h3.5L5 17h14l-5-7h3.5z"/><path d="M12 17v4.5"/>',
-  ocean: '<path d="M2 8.5c2.5-2 4.5-2 7 0s4.5 2 7 0 4.5-2 6 0M2 13.5c2.5-2 4.5-2 7 0s4.5 2 7 0 4.5-2 6 0M2 18.5c2.5-2 4.5-2 7 0s4.5 2 7 0 4.5-2 6 0"/>',
-  space: '<circle cx="12" cy="12" r="5"/><ellipse cx="12" cy="12" rx="10.5" ry="3.2" transform="rotate(-22 12 12)"/>',
-};
-
 // ---------- HSL helpers ----------
 function toHsl(hex) {
   const n = parseInt(hex.slice(1), 16);

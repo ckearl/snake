@@ -54,10 +54,10 @@ your own settings come back. A toast credits the viewer for each action. With `?
 
 ## Layout
 - `src/game.js` — pure game state + rules (no DOM). Future Twitch events should mutate state through functions here.
-- `src/themes.js` — board themes (Sun, Moon, Snowflake, Volcano, Desert, Forest, Ocean, Space), snake skins (10 solid + 7 two-colour gradients, head → tail), theme icons.
+- `src/themes.js` — board themes (Sun, Moon, Snowflake, Volcano, Desert, Forest, Ocean, Space), snake skins (10 solid + 7 two-colour gradients, head → tail).
 - `src/pixels.js` — tiny pixel-sprite toolkit.
 - `src/fruits.js` — the 20 pixel-art fruit sprites.
-- `src/critters.js` — bunny and turtle speed icons.
+- `src/critters.js` — pixel sprites: bunny and turtle speed icons, game mode icons, board theme icons.
 - `src/commands.js` — chat command parsing, option matching, cooldowns.
 - `src/chat.js` — anonymous read-only Twitch chat (IRC over WebSocket).
 - `src/render.js` — canvas drawing: board, snake, orange/crown sprites, menu scene.
