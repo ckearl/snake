@@ -192,14 +192,17 @@ function toMenu() {
   if (game && game.status !== 'ready' && game.status !== 'over' && game.status !== 'won') {
     recordScore();
     game.status = 'over';
+    updateScore();
   }
   showScreen('menu');
 }
 
+// Even a 0 is saved for a finished run: the crown shows once a mode has been played.
 function recordScore() {
   lastScore = game.score;
-  if (game.score > getBest()) store.set(bestKey(), game.score);
+  if (!hasBest() || game.score > getBest()) store.set(bestKey(), game.score);
 }
+const hasBest = () => store.get(bestKey(), null) !== null;
 
 function setHint(text, center = false, variant = null) {
   el.hint.hidden = !text;
@@ -211,6 +214,10 @@ function setHint(text, center = false, variant = null) {
 function updateScore() {
   const score = game ? game.score : 0;
   el.score.textContent = score;
+  // No crown until this mode (on this board size) has a finished run to beat.
+  const shown = hasBest();
+  el.topBest.hidden = !shown;
+  $('best-icon').hidden = !shown;
   // The best for the mode in play; climbs along with the score once it's beaten
   // (and stays gold until the next game).
   el.topBest.textContent = Math.max(getBest(), score);
@@ -1146,8 +1153,8 @@ function frame(t) {
 }
 
 function onGameEnd(ev) {
-  updateScore();
   recordScore();
+  updateScore();
   const t0 = performance.now();
   if (ev === 'die') {
     if (game.blast) sfx.boom();
