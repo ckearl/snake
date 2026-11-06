@@ -102,8 +102,11 @@
             <h3>Chat commands</h3>
             <label class="per-minute">
               <span>All of chat: at most</span>
-              <input id="cmd-per-minute" type="number" min="0" max="60" step="1" aria-label="Chat commands per minute, all of chat together (0 = no limit)" />
-              <span>a minute <small>(0 = no limit)</small></span>
+              <input id="cmd-limit-count" type="number" min="0" max="60" step="1" aria-label="How many chat commands, all of chat together (0 = no limit)" />
+              <span>every</span>
+              <input id="cmd-limit-minutes" type="number" min="0.5" max="60" step="0.5" aria-label="Minutes" />
+              <span id="cmd-limit-unit">minute</span>
+              <small class="hint">Shared by all commands, on top of their own cooldowns. 0 = no limit.</small>
             </label>
             <div class="cmd-head"><span>On</span><span>Command</span><span>Cooldown</span></div>
             <div id="cmd-rows" class="cmd-rows"></div>

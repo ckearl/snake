@@ -18,7 +18,7 @@ import {
 } from './effects.js';
 import { sfx, isMuted, setMuted } from './sound.js';
 import {
-  CommandRouter, matchOption, COMMANDS, loadCommandConfig, DEFAULT_PER_MINUTE, MAX_PER_MINUTE,
+  CommandRouter, matchOption, COMMANDS, loadCommandConfig, DEFAULT_LIMIT, cleanLimit,
 } from './commands.js';
 import { TwitchChat } from './chat.js';
 
@@ -1532,9 +1532,23 @@ function toast(user, what) {
 // ---------- twitch chat ----------
 let commandConfig = loadCommandConfig(JSON.parse(store.get('snake.commands', '{}') || '{}'));
 // All of chat together gets this many commands a minute (0 = no limit).
-const clampPerMinute = (n) => (Number.isFinite(n) ? Math.min(MAX_PER_MINUTE, Math.max(0, Math.round(n))) : DEFAULT_PER_MINUTE);
-let perMinute = clampPerMinute(Number(store.get('snake.chatPerMinute', DEFAULT_PER_MINUTE)));
-const router = new CommandRouter({ config: commandConfig, perMinute });
+let chatLimit = cleanLimit({
+  count: store.get('snake.chatPerMinute', DEFAULT_LIMIT.count), // (saved under its old name)
+  minutes: store.get('snake.chatLimitMinutes', DEFAULT_LIMIT.minutes),
+});
+const router = new CommandRouter({ config: commandConfig, limit: chatLimit });
+function setChatLimit(limit) {
+  chatLimit = cleanLimit(limit);
+  store.set('snake.chatPerMinute', String(chatLimit.count));
+  store.set('snake.chatLimitMinutes', String(chatLimit.minutes));
+  router.setLimit(chatLimit);
+  syncChatLimit();
+}
+function syncChatLimit() {
+  $('cmd-limit-count').value = String(chatLimit.count);
+  $('cmd-limit-minutes').value = String(chatLimit.minutes);
+  $('cmd-limit-unit').textContent = chatLimit.minutes === 1 ? 'minute' : 'minutes';
+}
 function saveCommandConfig() {
   store.set('snake.commands', JSON.stringify(commandConfig));
   router.setConfig(commandConfig);
@@ -1613,7 +1627,7 @@ function syncChannelStatus() {
 function syncStreamPanel() {
   $('channel-input').value = store.get('snake.channel', '');
   syncChannelStatus();
-  $('cmd-per-minute').value = String(perMinute);
+  syncChatLimit();
   const rows = $('cmd-rows');
   rows.replaceChildren();
   let group = null;
@@ -1712,19 +1726,16 @@ $('channel-form').addEventListener('submit', (e) => {
   syncChannelStatus();
 });
 
-$('cmd-per-minute').addEventListener('change', () => {
-  perMinute = clampPerMinute(Number($('cmd-per-minute').value));
-  $('cmd-per-minute').value = String(perMinute);
-  store.set('snake.chatPerMinute', String(perMinute));
-  router.setPerMinute(perMinute);
-});
+for (const id of ['cmd-limit-count', 'cmd-limit-minutes']) {
+  $(id).addEventListener('change', () => setChatLimit({
+    count: $('cmd-limit-count').value, minutes: $('cmd-limit-minutes').value,
+  }));
+}
 
 $('cmd-reset').addEventListener('click', () => {
   commandConfig = loadCommandConfig();
   saveCommandConfig();
-  perMinute = DEFAULT_PER_MINUTE;
-  store.set('snake.chatPerMinute', String(perMinute));
-  router.setPerMinute(perMinute);
+  setChatLimit(DEFAULT_LIMIT);
   syncStreamPanel();
 });
 

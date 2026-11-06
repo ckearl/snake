@@ -40,7 +40,7 @@ connected. The channel is remembered.
 The Stream panel also lets you turn each command on/off and set its cooldown (saved; applies
 immediately). Opening it mid-game pauses the game.
 
-All of chat together can run at most **3 commands a minute** (change it at the top of the command list; 0 = no limit),
+All of chat together can run at most **3 commands every 1 minute** (both numbers can be changed at the top of the command list — e.g. 5 every 2 minutes; 0 = no limit),
 on top of each command's own cooldown. Anything chat drops in is a bonus: it scores and grows you like any fruit, but the
 mode doesn't replace it once eaten, so the mode carries on as normal around it. The drop commands take an optional fruit
 (`!box pineapple`, `!fly grape`); without one you get the board's fruit.

@@ -29,7 +29,7 @@ test('matchOption: loose names for colours and themes', () => {
 test('CommandRouter: cooldown per command', () => {
   let t = 0;
   const wall = COMMANDS.wall.cooldown;
-  const r = new CommandRouter({ now: () => t, perMinute: 0 });
+  const r = new CommandRouter({ now: () => t, limit: { count: 0 } });
   assert.equal(r.handle({ user: 'a', text: '!wall' }).action, 'wall');
   t = 1000;
   const cd = r.handle({ user: 'b', text: '!wall' });
@@ -52,7 +52,7 @@ test('CommandRouter: only 3 commands a minute across all of chat, by default', (
   assert.equal(no.cooldown, 50000, 'free again once the oldest is a minute old');
   t = 60000;
   assert.equal(r.handle({ user: 'b', text: '!box' }).action, 'box');
-  r.setPerMinute(0);
+  r.setLimit({ count: 0 });
   for (let i = 0; i < 10; i++) assert.equal(r.handle({ user: 'c', text: `!${['fly', 'wall', 'mine'][i % 3]}` }).action !== undefined, true);
 });
 
@@ -133,4 +133,32 @@ test('chat text cannot reach built-in object properties', () => {
   // Option names are matched against own entries only.
   assert.equal(matchOption('constructor', SPEEDS), null);
   assert.equal(matchOption('__proto__', FRUITS), null);
+});
+
+test('CommandRouter: the shared limit can cover any number of minutes', () => {
+  let t = 0;
+  const r = new CommandRouter({
+    now: () => t,
+    config: loadCommandConfig(Object.fromEntries(Object.keys(COMMANDS).map((n) => [n, { cooldown: 0 }]))),
+    limit: { count: 2, minutes: 5 },
+  });
+  assert.equal(r.handle({ user: 'a', text: '!wall' }).action, 'wall');
+  t = 60000;
+  assert.equal(r.handle({ user: 'a', text: '!fly' }).action, 'fly');
+  t = 4 * 60000;
+  const no = r.handle({ user: 'b', text: '!mine' });
+  assert.equal(no.limited, true, 'still inside the 5 minutes');
+  assert.equal(no.cooldown, 60000, 'free once the first is 5 minutes old');
+  t = 5 * 60000;
+  assert.equal(r.handle({ user: 'b', text: '!mine' }).action, 'mine');
+});
+
+test('cleanLimit: junk and out-of-range values settle to something sensible', async () => {
+  const { cleanLimit, DEFAULT_LIMIT } = await import('../src/commands.js');
+  assert.deepEqual(cleanLimit({ count: '4', minutes: '2' }), { count: 4, minutes: 2 });
+  assert.deepEqual(cleanLimit({ count: -3, minutes: 0 }), { count: 0, minutes: DEFAULT_LIMIT.minutes });
+  assert.deepEqual(cleanLimit({ count: 'lots', minutes: 'x' }), DEFAULT_LIMIT);
+  assert.deepEqual(cleanLimit({ count: 999, minutes: 999 }), { count: 60, minutes: 60 });
+  assert.deepEqual(cleanLimit({ count: 3, minutes: 0.2 }), { count: 3, minutes: 0.5 });
+  assert.deepEqual(cleanLimit({ count: 3, minutes: 1.3 }), { count: 3, minutes: 1.5 });
 });

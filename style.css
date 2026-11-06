@@ -449,8 +449,8 @@ svg .fill { fill: currentColor; stroke: none; }
   margin: 0 0 14px;
   font-size: 15px;
 }
-.per-minute input { width: 56px; text-align: right; }
-.per-minute small { opacity: 0.6; }
+.per-minute input { width: 60px; text-align: right; }
+.per-minute .hint { flex-basis: 100%; font-size: 13px; opacity: 0.6; }
 .cooldown { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
 .cooldown input { width: 66px; text-align: right; }
 .cooldown span { opacity: 0.7; }

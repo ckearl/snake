@@ -29,10 +29,24 @@ export const COMMANDS = {
   size: { action: 'size', cooldown: 60000, group: 'Board', usage: 'size', help: 'Changes the board size' },
 };
 
-// All chat commands together can only run this many times a minute (the
-// streamer can change it; 0 = no limit).
-export const DEFAULT_PER_MINUTE = 3;
-export const MAX_PER_MINUTE = 60;
+// All of chat together can only run `count` commands every `minutes` minutes
+// (the streamer can change both; a count of 0 = no limit).
+export const DEFAULT_LIMIT = { count: 3, minutes: 1 };
+export const MAX_LIMIT_COUNT = 60;
+export const MAX_LIMIT_MINUTES = 60;
+export const MIN_LIMIT_MINUTES = 0.5;
+
+// Tidy a { count, minutes } limit from saved or typed values.
+export function cleanLimit({ count, minutes } = {}) {
+  const c = Number(count);
+  const m = Number(minutes);
+  return {
+    count: Number.isFinite(c) ? Math.min(MAX_LIMIT_COUNT, Math.max(0, Math.round(c))) : DEFAULT_LIMIT.count,
+    minutes: Number.isFinite(m) && m > 0
+      ? Math.min(MAX_LIMIT_MINUTES, Math.max(MIN_LIMIT_MINUTES, Math.round(m * 2) / 2))
+      : DEFAULT_LIMIT.minutes,
+  };
+}
 
 // Cooldowns from before they were raised. A saved cooldown still at its old
 // default was never chosen by the streamer, so it moves up to the new one.
@@ -89,20 +103,20 @@ export function matchOption(arg, table) {
 // Tracks cooldowns (each command's own, and the shared per-minute limit) and
 // turns chat messages into action requests.
 export class CommandRouter {
-  constructor({ now = () => Date.now(), config = loadCommandConfig(), perMinute = DEFAULT_PER_MINUTE } = {}) {
+  constructor({ now = () => Date.now(), config = loadCommandConfig(), limit = DEFAULT_LIMIT } = {}) {
     this.now = now;
     this.config = config;
-    this.perMinute = perMinute;
+    this.limit = cleanLimit(limit);
     this.lastRun = new Map(); // command name -> time
-    this.recent = []; // times of the commands run in the last minute (all of them)
+    this.recent = []; // times of the commands run inside the limit's window (all of them)
   }
 
   setConfig(config) {
     this.config = config;
   }
 
-  setPerMinute(n) {
-    this.perMinute = n;
+  setLimit(limit) {
+    this.limit = cleanLimit(limit);
   }
 
   // msg: { user, text }. Returns { action, arg, user } when a command should run,
@@ -117,10 +131,11 @@ export class CommandRouter {
     const last = this.lastRun.get(cmd.name) ?? -Infinity;
     const left = last + settings.cooldown - t;
     if (left > 0) return { cooldown: left, action, user: msg.user };
-    // The shared limit: only so many commands a minute, whoever sends them.
-    this.recent = this.recent.filter((r) => r > t - 60000);
-    if (this.perMinute > 0 && this.recent.length >= this.perMinute) {
-      return { cooldown: this.recent[0] + 60000 - t, limited: true, action, user: msg.user };
+    // The shared limit: only so many commands every so many minutes, whoever sends them.
+    const span = this.limit.minutes * 60000;
+    this.recent = this.recent.filter((r) => r > t - span);
+    if (this.limit.count > 0 && this.recent.length >= this.limit.count) {
+      return { cooldown: this.recent[0] + span - t, limited: true, action, user: msg.user };
     }
     this.recent.push(t);
     this.lastRun.set(cmd.name, t);
