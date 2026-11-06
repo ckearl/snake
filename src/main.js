@@ -924,11 +924,15 @@ function drawGame(t) {
     // Grid fruits sit in their square; flying fruits are positioned by centre.
     const cx = flying ? f.x * cell : (f.x + 0.5) * cell;
     const cy = flying ? f.y * cell : (f.y + 0.5) * cell;
-    if (f.fly === 'winged') drawWings(ctx, cx, cy, size, Math.floor((t + (f.id ?? 0) * 97) / 130) % 2 === 0);
+    if (f.fly === 'winged' || f.fly === 'both') drawWings(ctx, cx, cy, size, Math.floor((t + (f.id ?? 0) * 97) / 130) % 2 === 0);
     const lift = flying ? 0 : fruitHop(t, f.id ?? f.x * 31 + f.y);
     drawFruit(ctx, fruitKind(f), cx - size / 2, cy - size / 2 - cell * 0.03, size, { shadow: !flying, poison: f.poison, lift });
     if (f.poison) drawPoisonBubbles(ctx, cx, cy, size, t, f.id ?? 0);
-    for (const side of f.shields ?? []) drawShield(ctx, f.x, f.y, side, cell, Math.min(1, p * 1.5));
+    // A flying fruit's walls ride along with it, sized to the smaller fruit.
+    const sc = flying ? FLY_SHIELD : 1;
+    const sx = flying ? f.x / sc - 0.5 : f.x;
+    const sy = flying ? f.y / sc - 0.5 : f.y;
+    for (const side of f.shields ?? []) drawShield(ctx, sx, sy, side, cell * sc, Math.min(1, p * 1.5));
   }
   // Walls whose fruit was just eaten fade away.
   shieldGone = shieldGone.filter((g) => t - g.t0 < 220);
@@ -984,6 +988,8 @@ function drawGame(t) {
   confetti = confetti.filter((c) => t - c.t0 < CONFETTI_MS);
   for (const c of confetti) drawConfetti(ctx, c.pieces, t - c.t0, cell);
 }
+
+const FLY_SHIELD = 0.85; // a flying fruit's walls, as a fraction of a square
 
 // Fruit waiting on the board gives a little hop now and then (each on its own
 // beat), then sits still. Returns how high it is off the ground, in px.
@@ -1097,9 +1103,16 @@ function flyFruits(dt, t) {
   const alpha = prevSnake ? Math.min(1, acc / tickMs()) : 1;
   const head = prevSnake ? interpolateSnake(game.snake, prevSnake, alpha, game.jumps)[0] : null;
   const caught = updateFlyers(game, dt, head);
+  if (game.status === 'over') {
+    // Ran into a flying fruit's wall.
+    lastEv = 'die';
+    onGameEnd('die');
+    return;
+  }
   for (const f of caught) {
-    eaten.push({ cx: f.x, cy: f.y, kind: fruitKind(f), t0: t });
-    sfx.eat();
+    eaten.push({ cx: f.x, cy: f.y, kind: fruitKind(f), poison: f.poison, t0: t });
+    if (f.poison) sfx.poison();
+    else sfx.eat();
   }
   if (caught.length) {
     updateScore();
@@ -1140,8 +1153,9 @@ function afterStep(ev, before, wallsBefore) {
   if (ev === 'flip') {
     // Twin: the fruit was eaten where the head was, which is now the tail end.
     const at = game.snake[game.snake.length - 1];
-    const f = before.find((q) => q.x === at.x && q.y === at.y);
-    eaten.push({ cx: at.x + 0.5, cy: at.y + 0.5, kind: f ? fruitKind(f) : fruitId(), t0: performance.now() });
+    const f = before.find((q) => !q.fly && q.x === at.x && q.y === at.y);
+    // (A flying fruit caught last tick was already shown being eaten.)
+    if (f) eaten.push({ cx: at.x + 0.5, cy: at.y + 0.5, kind: fruitKind(f), t0: performance.now() });
     // The body jumped ends, so hold it still for this tick instead of interpolating.
     prevSnake = null;
     sfx.flip();
@@ -1158,7 +1172,8 @@ function afterStep(ev, before, wallsBefore) {
   portalFruits = null;
   if (ev === 'portal') {
     const j = game.jumps[game.jumps.length - 1];
-    portalFruits = { kind: pairKind(j.pair), from: j.from, to: j.to };
+    // (Through a flying pair, the fruits were already caught out of the air.)
+    if (j && !j.fly) portalFruits = { kind: pairKind(j.pair), from: j.from, to: j.to };
   }
   if (ev === 'eat') { sfx.eat(); updateScore(); }
   if (ev === 'portal') { sfx.portal(); updateScore(); }
