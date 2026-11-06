@@ -1209,6 +1209,7 @@ window.addEventListener('keydown', (e) => {
     if (e.code === 'KeyT') { toggleTimer(); return; }
     if (e.code === 'KeyM') { toggleMute(); return; }
     if (e.code === 'KeyF') { toggleFullscreen(); return; }
+    if (e.code === 'KeyC') { toggleChatCommands(); return; }
   }
 
   if (screen === 'settings') {
@@ -1435,7 +1436,21 @@ function saveCommandConfig() {
   store.set('snake.commands', JSON.stringify(commandConfig));
   router.setConfig(commandConfig);
 }
+// C turns chat's commands off and on (the connection stays up). Remembered.
+let chatPaused = store.get('snake.chatPaused', '0') === '1';
+function toggleChatCommands() {
+  chatPaused = !chatPaused;
+  store.set('snake.chatPaused', chatPaused ? '1' : '0');
+  syncChatPaused();
+  toast('Chat commands', chatPaused ? 'off' : 'on');
+}
+function syncChatPaused() {
+  $('btn-chat').classList.toggle('paused', chatPaused);
+  syncChannelStatus();
+}
+
 function onChatMessage(msg) {
+  if (chatPaused) return;
   const req = router.handle(msg);
   if (req && !req.cooldown) runAction(req.action, req.arg, req.user);
 }
@@ -1457,6 +1472,7 @@ function initChat() {
   const channel = store.get('snake.channel', '');
   if (channel) chat.connect(channel);
   else $('btn-chat').dataset.status = 'off';
+  syncChatPaused();
 }
 
 // ---------- stream settings panel ----------
@@ -1487,6 +1503,7 @@ function syncChannelStatus() {
   line.textContent = !chat.channel || status === 'off'
     ? 'Not connected'
     : status === 'on' ? `Reading chat in #${chat.channel}` : `Connecting to #${chat.channel}…`;
+  if (chatPaused) line.textContent += ' · commands off (C)';
   $('channel-connect').textContent = chat.channel && status !== 'off' ? 'Disconnect' : 'Connect';
 }
 

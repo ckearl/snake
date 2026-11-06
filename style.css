@@ -321,6 +321,10 @@ svg .fill { fill: currentColor; stroke: none; }
 }
 .chat-btn[data-status="on"] .dot { background: #5BE06A; }
 .chat-btn[data-status="connecting"] .dot { background: #FFD34D; }
+/* Chat commands turned off (C): struck through, dot greyed out. */
+.chat-btn .slash { display: none; }
+.chat-btn.paused .slash { display: inline; }
+.chat-btn.paused .dot { background: #8C95A8; }
 
 /* Chat toasts: who did what, bottom-left of the board */
 .toasts {
