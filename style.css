@@ -354,7 +354,17 @@ svg .fill { fill: currentColor; stroke: none; }
 }
 
 /* ---------- Stream settings panel ---------- */
-.stream-card { padding: 18px 20px 20px; text-align: left; }
+.stream-card {
+  padding: 18px 20px 20px;
+  text-align: left;
+  /* Settings text needs to be read, not just glanced at: a clean UI font here
+     (the pixel font stays for the title). */
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.35;
+}
+.stream-card h2 { font-family: var(--font); -webkit-font-smoothing: none; }
 .stream-card h2 { margin: 0 0 12px; font-size: 26px; }
 .stream-card h3 {
   margin: 0 0 8px;
@@ -368,7 +378,9 @@ svg .fill { fill: currentColor; stroke: none; }
 .channel-row { display: flex; gap: 8px; }
 .stream-card input[type="text"],
 .stream-card input[type="number"] {
-  font: 700 17px var(--font);
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 600;
   color: var(--text);
   background: rgba(0, 0, 0, 0.25);
   border: 2px solid rgba(255, 255, 255, 0.15);
@@ -391,6 +403,7 @@ svg .fill { fill: currentColor; stroke: none; }
 }
 .mini-btn:hover { background: var(--btn-hover); }
 .mini-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.stream-card .mini-btn { font-family: inherit; font-weight: 600; }
 .mini-btn.subtle { margin-top: 10px; background: rgba(255, 255, 255, 0.08); box-shadow: none; }
 
 .status-line { margin: 8px 2px 0; font-size: 14px; opacity: 0.85; }
@@ -417,8 +430,27 @@ svg .fill { fill: currentColor; stroke: none; }
 .cmd-rows { display: flex; flex-direction: column; gap: 6px; }
 .cmd-row { padding: 6px 4px; border-radius: 8px; background: rgba(255, 255, 255, 0.05); }
 .cmd-row.off .cmd-name { opacity: 0.45; }
-.cmd-name b { font-size: 17px; }
-.cmd-name small { display: block; font-size: 13px; opacity: 0.7; }
+.cmd-name b { font-size: 16px; font-weight: 650; }
+.cmd-name .usage { font-size: 14px; opacity: 0.6; }
+.cmd-group {
+  margin: 10px 4px 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+.cmd-group:first-child { margin-top: 0; }
+.per-minute {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+  font-size: 15px;
+}
+.per-minute input { width: 56px; text-align: right; }
+.per-minute small { opacity: 0.6; }
 .cooldown { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
 .cooldown input { width: 66px; text-align: right; }
 .cooldown span { opacity: 0.7; }

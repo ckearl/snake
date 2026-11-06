@@ -2,7 +2,7 @@ import {
   BOARD_SIZES, FRUIT_COUNTS, SPEEDS, GAME_MODES, BASE_TICK_MS, MINE_LIMIT,
   createGame, queueTurn, step, redirectExit, updateFlyers, snapshot, lateTurn,
   spawnWall, addBonusFlyer, resizeBoard, spawnMine,
-  addBonusShield, addBonusKey, addBonusBox, addBonusPortal, addBonusPoison, addTwin, CHAT_TWIN_FRUITS,
+  addBonusFruit, addBonusShield, addBonusKey, addBonusBox, addBonusPortal, addBonusPoison, addTwin, CHAT_TWIN_FRUITS,
 } from './game.js';
 import {
   sizeCanvas, drawBoard, drawSnake, drawSnakePath, interpolateSnake, snakePoints, drawWall, drawWings, drawFruit, drawSprite, drawCrown, drawScene, setBoardColors, setSnakeSkin,
@@ -17,7 +17,9 @@ import {
   makeFireworks, drawFireworks, drawDizzyStars, makeConfetti, drawConfetti, CONFETTI_MS, makeBlast, drawBlast,
 } from './effects.js';
 import { sfx, isMuted, setMuted } from './sound.js';
-import { CommandRouter, matchOption, COMMANDS, loadCommandConfig } from './commands.js';
+import {
+  CommandRouter, matchOption, COMMANDS, loadCommandConfig, DEFAULT_PER_MINUTE, MAX_PER_MINUTE,
+} from './commands.js';
 import { TwitchChat } from './chat.js';
 
 const MAX_CELL = 56;
@@ -278,6 +280,7 @@ const randomFruit = () => {
 };
 // Fruit kind for a board fruit: fixed choice, or the fruit's own rolled kind when mixed.
 function fruitKind(f) {
+  if (f.pick && FRUITS[f.pick]) return f.pick; // chat chose it
   if (f.pair) return pairKind(f.pair);
   if (fruitId() !== MIXED) return fruitId();
   if (!f.kind) {
@@ -292,6 +295,11 @@ function fruitKind(f) {
 // can tell which ends connect. The chosen fruit is used first when it's free.
 function pairKind(pair) {
   if (pairKinds.has(pair)) return pairKinds.get(pair);
+  const picked = game.foods.find((f) => f.pair === pair && f.pick && FRUITS[f.pick]);
+  if (picked) {
+    pairKinds.set(pair, picked.pick);
+    return picked.pick;
+  }
   const live = new Set([...game.foods.map((f) => f.pair), ...game.jumps.map((j) => j.pair)]);
   const used = new Set([...pairKinds].filter(([p]) => live.has(p)).map(([, k]) => k));
   let kind = fruitId() !== MIXED && !used.has(fruitId()) ? fruitId() : null;
@@ -1315,33 +1323,46 @@ const ACTIONS = {
     return 'added a wall';
   },
 
-  fly() {
+  // Bonus fruit (and the other modes' pieces), dropped into whatever mode is
+  // being played. Each takes an optional fruit: !box pineapple, !fly grape.
+  fruit(arg) {
     if (!inRound()) return null;
-    if (!addBonusFlyer(game)) return null;
+    const pick = chatFruit(arg);
+    if (!addBonusFruit(game, pick)) return null;
+    sfx.eat();
+    return `dropped ${aFruit(pick)}`;
+  },
+
+  fly(arg) {
+    if (!inRound()) return null;
+    const pick = chatFruit(arg);
+    if (!addBonusFlyer(game, pick)) return null;
     sfx.portal();
-    return 'released a flying fruit';
+    return `released ${aFruit(pick, 'flying')}`;
   },
 
-  // The other modes' pieces, dropped into whatever mode is being played.
-  shield() {
+  shield(arg) {
     if (!inRound()) return null;
-    if (!addBonusShield(game)) return null;
+    const pick = chatFruit(arg);
+    if (!addBonusShield(game, pick)) return null;
     sfx.wall();
-    return 'added a shielded fruit';
+    return `added ${aFruit(pick, 'shielded')}`;
   },
 
-  key() {
+  key(arg) {
     if (!inRound()) return null;
-    if (!addBonusKey(game)) return 'tried to add a key, but there was no room';
+    const pick = chatFruit(arg);
+    if (!addBonusKey(game, pick)) return 'tried to add a key, but there was no room';
     sfx.unlock();
-    return 'added a key and its lock';
+    return pick ? `locked ${aFruit(pick)} away (find the key)` : 'added a key and its lock';
   },
 
-  box() {
+  box(arg) {
     if (!inRound()) return null;
-    if (!addBonusBox(game)) return 'tried to add a box, but there was no room';
+    const pick = chatFruit(arg);
+    if (!addBonusBox(game, pick)) return 'tried to add a box, but there was no room';
     sfx.push();
-    return 'added a box and its target';
+    return pick ? `boxed up ${aFruit(pick)}` : 'added a box and its target';
   },
 
   mine() {
@@ -1358,18 +1379,20 @@ const ACTIONS = {
     return `made the snake a twin for ${CHAT_TWIN_FRUITS} fruits`;
   },
 
-  portal() {
+  portal(arg) {
     if (!inRound()) return null;
-    if (!addBonusPortal(game)) return null;
+    const pick = chatFruit(arg);
+    if (!addBonusPortal(game, pick)) return null;
     sfx.portal();
-    return 'opened a portal';
+    return pick ? `opened a ${FRUITS[pick].name.toLowerCase()} portal` : 'opened a portal';
   },
 
-  poison() {
+  poison(arg) {
     if (!inRound()) return null;
-    if (!addBonusPoison(game)) return null;
+    const pick = chatFruit(arg);
+    if (!addBonusPoison(game, pick)) return null;
     sfx.poison();
-    return 'added a fruit and a poison one';
+    return `added ${aFruit(pick)} and a poison one`;
   },
 
   size(arg) {
@@ -1407,7 +1430,7 @@ const ACTIONS = {
     return `turned the snake ${SKINS[next].name.toLowerCase()}`;
   },
 
-  fruit(arg) {
+  fruittype(arg) {
     // Chat text is untrusted: only look up real alias keys (not e.g. "constructor").
     const aliases = new Map([['basket', MIXED], ['mix', MIXED], ['mixed', MIXED]]);
     const next = aliases.get(arg?.replace(/[^a-z]/g, '')) ?? matchOption(arg, OPTIONS.fruit)
@@ -1459,6 +1482,25 @@ function clearChatOverrides() {
   if (sizeChanged) newGame();
 }
 
+// A fruit named in chat ("apple", "grape", "water melon"), or null.
+function chatFruit(arg) {
+  if (!arg) return null;
+  const tries = [arg, `${arg}s`, arg.replace(/y$/, 'ies'), arg.replace(/e?s$/, ''), arg.replace(/s$/, '')];
+  for (const t of tries) {
+    const id = matchOption(t, FRUITS);
+    if (id) return id;
+  }
+  return null;
+}
+
+// "a pineapple", "an apple", "some flying grapes"... or just "a fruit".
+function aFruit(pick, adj = '') {
+  const noun = pick ? FRUITS[pick].name.toLowerCase() : 'fruit';
+  const words = adj ? `${adj} ${noun}` : noun;
+  if (/s$/.test(noun)) return `some ${words}`;
+  return `${/^[aeiou]/.test(words) ? 'an' : 'a'} ${words}`;
+}
+
 // Run an action on behalf of a viewer and credit them on screen.
 function runAction(action, arg, user) {
   const what = ACTIONS[action]?.(arg);
@@ -1482,7 +1524,10 @@ function toast(user, what) {
 
 // ---------- twitch chat ----------
 let commandConfig = loadCommandConfig(JSON.parse(store.get('snake.commands', '{}') || '{}'));
-const router = new CommandRouter({ config: commandConfig });
+// All of chat together gets this many commands a minute (0 = no limit).
+const clampPerMinute = (n) => (Number.isFinite(n) ? Math.min(MAX_PER_MINUTE, Math.max(0, Math.round(n))) : DEFAULT_PER_MINUTE);
+let perMinute = clampPerMinute(Number(store.get('snake.chatPerMinute', DEFAULT_PER_MINUTE)));
+const router = new CommandRouter({ config: commandConfig, perMinute });
 function saveCommandConfig() {
   store.set('snake.commands', JSON.stringify(commandConfig));
   router.setConfig(commandConfig);
@@ -1561,12 +1606,22 @@ function syncChannelStatus() {
 function syncStreamPanel() {
   $('channel-input').value = store.get('snake.channel', '');
   syncChannelStatus();
+  $('cmd-per-minute').value = String(perMinute);
   const rows = $('cmd-rows');
   rows.replaceChildren();
+  let group = null;
   for (const [name, def] of Object.entries(COMMANDS)) {
+    if (def.group !== group) {
+      group = def.group;
+      const h = document.createElement('div');
+      h.className = 'cmd-group';
+      h.textContent = group;
+      rows.append(h);
+    }
     const cfg = commandConfig[name];
     const row = document.createElement('div');
     row.className = `cmd-row${cfg.enabled ? '' : ' off'}`;
+    row.title = def.help;
 
     const sw = document.createElement('label');
     sw.className = 'switch';
@@ -1585,9 +1640,13 @@ function syncStreamPanel() {
     label.className = 'cmd-name';
     const b = document.createElement('b');
     b.textContent = `!${name}`;
-    const help = document.createElement('small');
-    help.textContent = def.help;
-    label.append(b, help);
+    label.append(b);
+    if (def.usage) {
+      const usage = document.createElement('span');
+      usage.className = 'usage';
+      usage.textContent = `{${def.usage}}`;
+      label.append(' ', usage);
+    }
 
     const cd = document.createElement('label');
     cd.className = 'cooldown';
@@ -1632,9 +1691,19 @@ $('channel-form').addEventListener('submit', (e) => {
   syncChannelStatus();
 });
 
+$('cmd-per-minute').addEventListener('change', () => {
+  perMinute = clampPerMinute(Number($('cmd-per-minute').value));
+  $('cmd-per-minute').value = String(perMinute);
+  store.set('snake.chatPerMinute', String(perMinute));
+  router.setPerMinute(perMinute);
+});
+
 $('cmd-reset').addEventListener('click', () => {
   commandConfig = loadCommandConfig();
   saveCommandConfig();
+  perMinute = DEFAULT_PER_MINUTE;
+  store.set('snake.chatPerMinute', String(perMinute));
+  router.setPerMinute(perMinute);
   syncStreamPanel();
 });
 

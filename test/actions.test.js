@@ -272,3 +272,65 @@ test('the poison wander steers round locks, mine flags and walled fruit sides', 
     }
   }
 });
+
+test('chat fruit counts: every kind of chat drop scores and grows the snake', async () => {
+  const { addBonusFruit, addBonusShield, addBonusPortal } = await import('../src/game.js');
+  for (const [name, add] of [['!fruit', addBonusFruit], ['!shield', addBonusShield], ['!portal', addBonusPortal]]) {
+    const g = running({ mode: 'classic' });
+    const made = add(g);
+    const f = Array.isArray(made) ? made[0] : made;
+    if (f.shields) f.shields = [];
+    const h = g.snake[0];
+    f.x = h.x + 1;
+    f.y = h.y;
+    const len = g.snake.length;
+    step(g);
+    assert.equal(g.score, 1, name);
+    assert.equal(g.snake.length, len + 1, `${name} grows the snake`);
+  }
+});
+
+test('a fruit chat picks rides along: on the drop, and on what a chat lock or box lets out', async () => {
+  const { addBonusFruit, addBonusKey, addBonusBox, addBonusPoison } = await import('../src/game.js');
+  const g = running({ mode: 'classic' });
+  assert.equal(addBonusFruit(g, 'pineapple').pick, 'pineapple');
+  assert.ok(addBonusPoison(g, 'grapes').every((f) => f.pick === 'grapes'));
+  addBonusKey(g, 'mango');
+  const k = g.keys[0];
+  const h = g.snake[0];
+  k.x = h.x + 1;
+  k.y = h.y;
+  assert.equal(step(g), 'unlock');
+  assert.equal(g.foods.find((f) => f.keyed).pick, 'mango');
+
+  const b = running({ mode: 'classic' });
+  addBonusBox(b, 'kiwi');
+  const box = b.boxes[0];
+  const t = b.targets[0];
+  const bh = b.snake[0];
+  box.x = bh.x + 1;
+  box.y = bh.y;
+  t.x = bh.x + 2;
+  t.y = bh.y;
+  assert.equal(step(b), 'release');
+  assert.equal(b.foods.find((f) => f.boxed).pick, 'kiwi');
+});
+
+test('chat drops keep out of mine fields while there’s room elsewhere', async () => {
+  const game = await import('../src/game.js');
+  for (let seed = 1; seed < 25; seed++) {
+    let r = seed / 25;
+    const g = running({ mode: 'mines', rng: () => (r = (r * 9301 + 0.49297) % 1) });
+    for (let i = 0; i < 4; i++) game.spawnMine(g);
+    const inField = (c) => g.mines.some((m) => Math.max(Math.abs(m.x - Math.floor(c.x)), Math.abs(m.y - Math.floor(c.y))) <= 1);
+    game.addBonusFruit(g);
+    game.addBonusShield(g);
+    game.addBonusPortal(g);
+    game.addBonusPoison(g);
+    game.addBonusKey(g);
+    game.addBonusBox(g);
+    for (const q of [...g.foods.filter((f) => !f.fly), ...g.keys, ...g.locks, ...g.boxes, ...g.targets]) {
+      assert.ok(!inField(q), `seed ${seed}: ${JSON.stringify(q)}`);
+    }
+  }
+});

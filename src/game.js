@@ -242,7 +242,7 @@ export function step(state) {
         // A box knocked into a wall that can't find a new spot: the board's full.
         return win(state);
       } else {
-        const fresh = { ...spot, id: state.nextId++, ...(box.bonus && { bonus: true }) };
+        const fresh = { ...spot, id: state.nextId++, ...(box.bonus && { bonus: true }), ...(box.pick && { pick: box.pick }) };
         if (target) target.box = fresh.id;
         state.boxes.push(fresh);
       }
@@ -331,7 +331,8 @@ function unlock(state, key) {
   if (!lock) return;
   state.locks = state.locks.filter((l) => l !== lock);
   state.foods.push({
-    x: lock.x, y: lock.y, id: state.nextId++, keyed: true, shape: lock.shape, ...(lock.bonus && { bonus: true }),
+    x: lock.x, y: lock.y, id: state.nextId++, keyed: true, shape: lock.shape,
+    ...(lock.bonus && { bonus: true }), ...(lock.pick && { pick: lock.pick }),
   });
 }
 
@@ -346,7 +347,7 @@ const shuffled = (state, arr) => {
 // Lay a key and its lock. The lock (solid) lands on a free square away from the
 // head where it can't wall anything off; the key on a free square away from
 // the head and not touching its lock. Returns false if there's no room for both.
-export function spawnKeyPair(state, { bonus = false } = {}) {
+export function spawnKeyPair(state, { bonus = false, pick = null } = {}) {
   const h = state.snake[0];
   const used = new Set(state.locks.map((l) => l.shape));
   const shapes = KEY_SHAPES.filter((k) => !used.has(k));
@@ -359,7 +360,7 @@ export function spawnKeyPair(state, { bonus = false } = {}) {
   const key = cells.find((c) => !same(c, lock) && cheb(c, lock) >= 2);
   if (!key) return false;
   const id = state.nextId++;
-  const extra = bonus ? { bonus: true } : {};
+  const extra = { ...(bonus && { bonus: true }), ...(pick && { pick }) };
   state.locks.push({ ...lock, id, shape, ...extra });
   state.keys.push({ ...key, id, shape, ...extra });
   return true;
@@ -439,7 +440,9 @@ function pushBox(state, box, dest, body) {
   if (target) {
     state.boxes = state.boxes.filter((b) => b !== box);
     state.targets = state.targets.filter((t) => t !== target);
-    state.foods.push({ x: dest.x, y: dest.y, id: state.nextId++, boxed: true, ...(box.bonus && { bonus: true }) });
+    state.foods.push({
+      x: dest.x, y: dest.y, id: state.nextId++, boxed: true, ...(box.bonus && { bonus: true }), ...(box.pick && { pick: box.pick }),
+    });
     return 'release';
   }
   box.x = dest.x;
@@ -467,7 +470,7 @@ export function placeBox(state) {
       if (clear) ok.push({ x, y });
     }
   }
-  return ok.length ? ok[Math.floor(state.rng() * ok.length)] : null;
+  return pickOutsideFields(state, ok);
 }
 
 // A target on any open square at least 2 away from its box.
@@ -476,18 +479,26 @@ function placeTarget(state, box) {
   const ok = [];
   for (let y = 0; y < state.rows; y++) {
     for (let x = 0; x < state.cols; x++) {
-      if (!taken.has(y * state.cols + x) && cheb(box, { x, y }) >= 2) ok.push({ x, y });
+      if (!taken.has(y * state.cols + x) && cheb(box, { x, y }) >= 2 && !state.mines.some((m) => same(m, { x, y }))) ok.push({ x, y });
     }
   }
-  return ok.length ? ok[Math.floor(state.rng() * ok.length)] : null;
+  return pickOutsideFields(state, ok);
+}
+
+// A random square from `cells`, keeping out of mine fields while there's anywhere else.
+function pickOutsideFields(state, cells) {
+  const outside = cells.filter((c) => !state.mines.some((m) => cheb(m, c) <= 1));
+  const pool = outside.length ? outside : cells;
+  return pool.length ? { ...pool[Math.floor(state.rng() * pool.length)] } : null;
 }
 
 // Drop a new box and its target. Returns false if there's no room for both.
-export function spawnPuzzle(state, { bonus = false } = {}) {
+export function spawnPuzzle(state, { bonus = false, pick = null } = {}) {
   const box = placeBox(state);
   if (!box) return false;
   box.id = state.nextId++;
   if (bonus) box.bonus = true;
+  if (pick) box.pick = pick;
   state.boxes.push(box);
   const target = placeTarget(state, box);
   if (!target) {
@@ -965,22 +976,37 @@ function makeFlyer(state, f, kind) {
 
 // ---------- chat / external actions ----------
 // Drop one extra winged fruit (any mode). It's a bonus: not replaced once eaten.
-export function addBonusFlyer(state) {
+// `pick` (chat's choice of fruit, e.g. 'apple') rides along on everything a
+// chat command drops, and on the fruit a chat lock or box lets out.
+export function addBonusFlyer(state, pick = null) {
   const f = placeFood(state);
   if (!f) return null;
   f.id = state.nextId++;
   f.bonus = true;
+  if (pick) f.pick = pick;
   makeFlyer(state, f, 'winged');
   state.foods.push(f);
   return f;
 }
 
 // A bonus fruit with walls on it (shield mode's fruit, in any mode).
-export function addBonusShield(state) {
+// A plain bonus fruit on the grid.
+export function addBonusFruit(state, pick = null) {
   const f = placeAway(state);
   if (!f) return null;
   f.id = state.nextId++;
   f.bonus = true;
+  if (pick) f.pick = pick;
+  state.foods.push(f);
+  return f;
+}
+
+export function addBonusShield(state, pick = null) {
+  const f = placeAway(state);
+  if (!f) return null;
+  f.id = state.nextId++;
+  f.bonus = true;
+  if (pick) f.pick = pick;
   addShields(state, f);
   if (!f.shields.length) {
     // Chat asked for a shield: make sure there is one.
@@ -997,15 +1023,15 @@ export function addBonusShield(state) {
 
 // A bonus key + lock (with its fruit), a box + target, or a portal pair. None
 // of them count toward the mode's own fruit, and none are replaced once eaten.
-export function addBonusKey(state) {
-  return spawnKeyPair(state, { bonus: true });
+export function addBonusKey(state, pick = null) {
+  return spawnKeyPair(state, { bonus: true, pick });
 }
 
-export function addBonusBox(state) {
-  return spawnPuzzle(state, { bonus: true });
+export function addBonusBox(state, pick = null) {
+  return spawnPuzzle(state, { bonus: true, pick });
 }
 
-export function addBonusPortal(state) {
+export function addBonusPortal(state, pick = null) {
   const a = placeAway(state);
   if (!a) return null;
   state.foods.push(a);
@@ -1018,12 +1044,13 @@ export function addBonusPortal(state) {
   a.id = state.nextId++;
   b.id = state.nextId++;
   a.bonus = b.bonus = true;
+  if (pick) a.pick = b.pick = pick;
   state.foods.push(b);
   return [a, b];
 }
 
 // A bonus fruit and a poison one alongside it.
-export function addBonusPoison(state) {
+export function addBonusPoison(state, pick = null) {
   const f = spawnPoisonFruit(state, false);
   if (!f) return null;
   const p = spawnPoisonFruit(state, true);
@@ -1032,6 +1059,7 @@ export function addBonusPoison(state) {
     return null;
   }
   f.bonus = p.bonus = true;
+  if (pick) f.pick = p.pick = pick;
   return [f, p];
 }
 

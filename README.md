@@ -40,22 +40,34 @@ connected. The channel is remembered.
 The Stream panel also lets you turn each command on/off and set its cooldown (saved; applies
 immediately). Opening it mid-game pauses the game.
 
+All of chat together can run at most **3 commands a minute** (change it at the top of the command list; 0 = no limit),
+on top of each command's own cooldown. Anything chat drops in is a bonus: it scores and grows you like any fruit, but the
+mode doesn't replace it once eaten, so the mode carries on as normal around it. The drop commands take an optional fruit
+(`!box pineapple`, `!fly grape`); without one you get the board's fruit.
+
 | Command | Effect | Default cooldown |
 |---|---|---|
-| `!wall` | Adds a wall block (never in front of you, never boxes you in) — any mode | 2s |
-| `!fly` | Adds a bonus winged fruit (not replaced once eaten) — any mode | 2s |
-| `!shield` | Adds a bonus fruit with one or two walls on it (Shields mode's fruit) — any mode | 3s |
-| `!key` | Adds a bonus key and the lock it opens, with a fruit inside (Keys mode) — any mode | 3s |
-| `!box` | Adds a bonus box and its own target (Box mode); it only opens on that target — any mode | 3s |
-| `!mine` | Lays a mine field with its flag (Mines mode) — any mode | 4s |
-| `!twin` | The next 5 fruits eaten each flip the snake end for end (Twin mode); another `!twin` tops it back up to 5 | 8s |
-| `!portal` | Adds a bonus portal: a linked fruit pair, eat one to come out of the other — any mode | 3s |
-| `!poison` | Adds a bonus fruit and a poison one beside it (Poison mode) — any mode | 3s |
-| `!size [small\|medium\|large\|bigger\|smaller]` | Changes the board size (random if no size given). Shrinking centres on the head; anything outside is lost | 8s |
-| `!color [name]` | Snake colour, e.g. `!color red`, `!color pink to yellow` (random if none) | 3s |
-| `!mapcolor [name]` | Board colour, e.g. `!mapcolor volcano` (random if none) | 3s |
-| `!fruit [name\|mixed]` | Fruit type, e.g. `!fruit kiwi`, `!fruit watermelon`, `!fruit basket` for mixed (random if none) | 3s |
-| `!speed [slow\|normal\|fast\|turtle\|snake\|bunny\|faster\|slower]` | Snake speed for the rest of the round (random if none) | 5s |
+| **Drop fruit** (any mode) | | |
+| `!fruit {fruit}` | Drops a bonus fruit | 20s |
+| `!fly {fruit}` | Drops a bonus winged fruit | 20s |
+| `!shield {fruit}` | Drops a bonus fruit with one or two walls on it (Shields mode's fruit) | 30s |
+| `!portal {fruit}` | Opens a bonus portal: a linked fruit pair, eat one to come out of the other | 30s |
+| `!key {fruit}` | Drops a bonus key and the lock it opens, with the fruit inside (Keys mode) | 30s |
+| `!box {fruit}` | Drops a bonus box and its own target; it only opens on that target (Box mode) | 30s |
+| `!poison {fruit}` | Drops a bonus fruit and a poison one beside it (Poison mode) | 45s |
+| **Hazards** (any mode) | | |
+| `!wall` | Adds a wall block (never in front of you, never boxes you in) | 30s |
+| `!mine` | Lays a mine field with its flag (Mines mode) | 45s |
+| **Snake** | | |
+| `!twin` | The next 5 fruits eaten each flip the snake end for end (Twin mode); another `!twin` tops it back up to 5 | 60s |
+| `!speed {slow\|normal\|fast\|turtle\|snake\|bunny\|faster\|slower}` | Snake speed for the rest of the round (random if none) | 30s |
+| `!color {color}` | Snake colour, e.g. `!color red`, `!color pink to yellow` (random if none) | 15s |
+| **Board** | | |
+| `!mapcolor {map}` | Board colour, e.g. `!mapcolor volcano` (random if none) | 15s |
+| `!fruittype {fruit\|mixed}` | The board's fruit, e.g. `!fruittype kiwi`, `!fruittype basket` for mixed (random if none) | 20s |
+| `!size {small\|medium\|large\|bigger\|smaller}` | Changes the board size (random if no size given). Shrinking centres on the head; anything outside is lost | 60s |
+
+Chat drops (and everything else that spawns) keep out of mine fields while there's room elsewhere.
 
 Size, colour, fruit and speed changes from chat last for the current round (or the next, if sent from the menu), then
 your own settings come back. A toast credits the viewer for each action. With `?debug`,

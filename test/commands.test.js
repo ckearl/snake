@@ -28,15 +28,44 @@ test('matchOption: loose names for colours and themes', () => {
 
 test('CommandRouter: cooldown per command', () => {
   let t = 0;
-  const r = new CommandRouter({ now: () => t });
+  const wall = COMMANDS.wall.cooldown;
+  const r = new CommandRouter({ now: () => t, perMinute: 0 });
   assert.equal(r.handle({ user: 'a', text: '!wall' }).action, 'wall');
   t = 1000;
   const cd = r.handle({ user: 'b', text: '!wall' });
-  assert.equal(cd.cooldown, 1000, 'still cooling down');
+  assert.equal(cd.cooldown, wall - 1000, 'still cooling down');
   assert.equal(r.handle({ user: 'b', text: '!fly' }).action, 'fly', 'other commands unaffected');
-  t = 2000;
+  t = wall;
   assert.equal(r.handle({ user: 'b', text: '!wall' }).action, 'wall', 'cooldown over');
   assert.equal(r.handle({ user: 'c', text: 'hello chat' }), null);
+});
+
+test('CommandRouter: only 3 commands a minute across all of chat, by default', () => {
+  let t = 0;
+  const r = new CommandRouter({ now: () => t, config: loadCommandConfig(Object.fromEntries(
+    Object.keys(COMMANDS).map((n) => [n, { cooldown: 0 }]),
+  )) });
+  for (const c of ['!wall', '!fly', '!mine']) assert.equal(r.handle({ user: 'a', text: c }).action, c.slice(1));
+  t = 10000;
+  const no = r.handle({ user: 'b', text: '!box' });
+  assert.equal(no.limited, true);
+  assert.equal(no.cooldown, 50000, 'free again once the oldest is a minute old');
+  t = 60000;
+  assert.equal(r.handle({ user: 'b', text: '!box' }).action, 'box');
+  r.setPerMinute(0);
+  for (let i = 0; i < 10; i++) assert.equal(r.handle({ user: 'c', text: `!${['fly', 'wall', 'mine'][i % 3]}` }).action !== undefined, true);
+});
+
+test('command config: cooldowns still at the old defaults move up to the new ones', () => {
+  const cfg = loadCommandConfig({ wall: { enabled: true, cooldown: 2000 }, mine: { cooldown: 12000 } });
+  assert.equal(cfg.wall.cooldown, COMMANDS.wall.cooldown, 'old default: upgraded');
+  assert.equal(cfg.mine.cooldown, 12000, 'the streamer’s own choice: kept');
+});
+
+test('command config: an old !fruit setting (board fruit type) carries over to !fruittype', () => {
+  const cfg = loadCommandConfig({ fruit: { enabled: false, cooldown: 9000 } });
+  assert.deepEqual(cfg.fruittype, { enabled: false, cooldown: 9000 });
+  assert.deepEqual(cfg.fruit, { enabled: true, cooldown: COMMANDS.fruit.cooldown });
 });
 
 
