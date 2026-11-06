@@ -16,6 +16,10 @@
       </div>
       <div id="timer" class="timer" role="timer" aria-label="Game time" hidden>0:00.0</div>
       <div class="controls">
+        <button id="btn-chat" class="icon-btn chat-btn" aria-label="Twitch chat connection" data-status="off">
+          <svg viewBox="0 0 24 24"><path d="M4 4h16v11H11l-4 4v-4H4z" /></svg>
+          <span class="dot"></span>
+        </button>
         <button id="btn-fullscreen" class="icon-btn" aria-label="Toggle fullscreen">
           <svg viewBox="0 0 24 24" class="when-off"><path d="M3 9V3h6M15 3h6v6M21 15v6h-6M9 21H3v-6" /></svg>
           <svg viewBox="0 0 24 24" class="when-on"><path d="M9 3v6H3M21 9h-6V3M15 21v-6h6M3 15h6v6" /></svg>
@@ -34,6 +38,7 @@
       <div class="board-wrap">
         <canvas id="board"></canvas>
         <div id="hint" class="pill" hidden></div>
+        <div id="toasts" class="toasts" aria-live="polite"></div>
       </div>
     </main>
 

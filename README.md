@@ -26,22 +26,41 @@ The shuffle button at the bottom of Settings randomises every row.
 
 **Speed:** 135 ms per tile × multiplier — turtle 1.33 (180 ms), snake 1 (135 ms), bunny 0.67 (90 ms). Movement is smoothly interpolated between tiles.
 
+## Twitch chat
+Open the game with `?channel=yourchannel` (e.g. `http://localhost:8080/?channel=ckearl`), or click the
+speech-bubble button in the top bar and type the channel. It reads chat anonymously — no login. The dot
+on the button is green when connected. The channel is remembered.
+
+| Command | Effect | Cooldown |
+|---|---|---|
+| `!wall` | Adds a wall block (never in front of you, never boxes you in) — any mode | 2s |
+| `!fly` | Adds a bonus winged fruit (not replaced once eaten) — any mode | 2s |
+| `!size [small\|medium\|large\|bigger\|smaller]` | Changes the board size (random if no size given). Shrinking centres on the head; anything outside is lost | 8s |
+| `!color [name]` | Snake colour, e.g. `!color red`, `!color pink to yellow` (random if none) | 3s |
+| `!mapcolor [name]` | Board colour, e.g. `!mapcolor volcano` (random if none) | 3s |
+
+Size and colour changes from chat last for the current round (or the next, if sent from the menu), then
+your own settings come back. A toast credits the viewer for each action. With `?debug`,
+`snakeDebug.chat('name', '!wall')` simulates a chat message.
+
 ## Layout
 - `src/game.js` — pure game state + rules (no DOM). Future Twitch events should mutate state through functions here.
 - `src/themes.js` — board themes (Sun, Moon, Snowflake, Volcano, Desert, Forest, Ocean, Space), snake skins (10 solid + 7 two-colour gradients, head → tail), theme icons.
 - `src/pixels.js` — tiny pixel-sprite toolkit.
 - `src/fruits.js` — the 20 pixel-art fruit sprites.
 - `src/critters.js` — bunny and turtle speed icons.
+- `src/commands.js` — chat command parsing, option matching, cooldowns.
+- `src/chat.js` — anonymous read-only Twitch chat (IRC over WebSocket).
 - `src/render.js` — canvas drawing: board, snake, orange/crown sprites, menu scene.
 - `src/sound.js` — WebAudio blips (eat / die / start / win jingle), mute persisted.
 - `src/effects.js` — win fireworks and dizzy stars for the loss bonk.
-- Tests: `test/game.test.js` (rules), `test/modes.test.js` (walls/portals), `test/render.test.js` (smooth movement).
+- Tests: `test/game.test.js` (rules), `test/modes.test.js` (walls/portals), `test/render.test.js` (smooth movement), `test/actions.test.js` (chat actions), `test/commands.test.js` (commands + IRC parsing).
 - `src/main.js` — screens (menu, settings, play), input, game loop, layout.
 - `style.css` — layout and UI styling.
 
 ## Debugging
 Open `http://localhost:8080/?debug` to get `window.snakeDebug` in devtools:
-`snakeDebug.game` (live state), `snakeDebug.win()`, `snakeDebug.lose()`.
+`snakeDebug.game` (live state), `snakeDebug.win()`, `snakeDebug.lose()`, `snakeDebug.chat(user, text)`, `snakeDebug.progress`.
 
 ## Credits
 - Font: [Pixelify Sans](https://github.com/eifetx/Pixelify-Sans) by the Pixelify Sans Project Authors, bundled in `fonts/` under the SIL Open Font License 1.1 (`fonts/OFL.txt`).

@@ -294,3 +294,45 @@ svg .fill { fill: currentColor; stroke: none; }
 .settings-actions { display: flex; gap: 12px; }
 .settings-actions .btn { flex: 1; }
 .settings-actions .btn.shuffle { flex: 0 0 76px; }
+
+/* Chat connection button: speech bubble with a status dot */
+.chat-btn { position: relative; }
+.chat-btn .dot {
+  position: absolute;
+  right: 7px;
+  bottom: 8px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #8C95A8;
+  box-shadow: 0 0 0 2px var(--topbar);
+}
+.chat-btn[data-status="on"] .dot { background: #5BE06A; }
+.chat-btn[data-status="connecting"] .dot { background: #FFD34D; }
+
+/* Chat toasts: who did what, bottom-left of the board */
+.toasts {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  pointer-events: none;
+}
+.toast {
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--topbar) 92%, transparent);
+  font-size: 16px;
+  max-width: 420px;
+  animation: toast-in 0.25s ease-out both;
+  transition: opacity 0.5s, transform 0.5s;
+}
+.toast b { color: var(--accent); }
+.toast.out { opacity: 0; transform: translateY(6px); }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(-12px); }
+  to { opacity: 1; transform: none; }
+}

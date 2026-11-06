@@ -1,6 +1,7 @@
 import {
-  BOARD_SIZES, FRUIT_COUNTS, SPEEDS, GAME_MODES, BASE_TICK_MS, FLYING_MODES,
+  BOARD_SIZES, FRUIT_COUNTS, SPEEDS, GAME_MODES, BASE_TICK_MS,
   createGame, queueTurn, step, redirectExit, updateFlyers, snapshot, lateTurn,
+  spawnWall, addBonusFlyer, resizeBoard,
 } from './game.js';
 import {
   sizeCanvas, drawBoard, drawSnake, drawSnakePath, interpolateSnake, snakePoints, drawWall, drawWings, drawFruit, drawSprite, drawCrown, drawScene, setBoardColors, setSnakeSkin,
@@ -12,6 +13,8 @@ import {
 } from './critters.js';
 import { makeFireworks, drawFireworks, drawDizzyStars } from './effects.js';
 import { sfx, isMuted, setMuted } from './sound.js';
+import { CommandRouter, matchOption } from './commands.js';
+import { TwitchChat } from './chat.js';
 
 const MAX_CELL = 56;
 const TOPBAR_H = 64;
@@ -57,6 +60,15 @@ const store = {
 
 let sizeKey = BOARD_SIZES[store.get('snake.size')] ? store.get('snake.size') : 'medium';
 const bestKey = () => `snake.best.${sizeKey}`;
+
+// Chat can change the size and colours for the current round (or the next one, if
+// it happens on the menu). They're cleared once that round ends, so chat never
+// overwrites the streamer's own settings.
+const chatOverride = { size: null, skin: null, theme: null };
+let roundPlayed = false; // a round with the current overrides has started
+const boardSizeKey = () => chatOverride.size ?? sizeKey;
+const themeId = () => chatOverride.theme ?? active.theme;
+const skinId = () => chatOverride.skin ?? active.skin;
 const getBest = () => Number(store.get(bestKey(), 0)) || 0;
 
 // ---------- state ----------
@@ -84,7 +96,7 @@ let elapsedMs = 0; // stopwatch: time spent with the snake actually moving
 let timerText = '';
 
 function newGame() {
-  const { cols, rows } = BOARD_SIZES[sizeKey];
+  const { cols, rows } = BOARD_SIZES[boardSizeKey()];
   game = createGame({ cols, rows, fruitCount: FRUIT_COUNTS[active.count], mode: active.mode });
   foodBorn.clear();
   wallBorn.clear();
@@ -110,6 +122,7 @@ function showScreen(name) {
   el.menu.hidden = name !== 'menu';
   el.settings.hidden = name !== 'settings';
   if (name === 'menu') {
+    if (roundPlayed) clearChatOverrides();
     pickSceneFruit();
     el.lastScore.textContent = lastScore;
     el.bestScore.textContent = getBest();
@@ -122,6 +135,7 @@ function showScreen(name) {
 }
 
 function play() {
+  roundPlayed = true;
   rollRound();
   newGame();
   showScreen('play');
@@ -257,7 +271,7 @@ function sizeIcon(id) {
 function paintSizeIcon(c) {
   const S = 40;
   const ctx = sizeCanvas(c, S, S);
-  const t = THEMES[active.theme];
+  const t = THEMES[themeId()];
   ctx.fillStyle = t.margins;
   ctx.fillRect(0, 0, S, S);
   const n = SIZE_ICON_GRID[c.dataset.sizeIcon];
@@ -342,7 +356,7 @@ function paintModeIcon(c) {
     drawFruit(ctx, iconFruit(0), 10, 9, 25);
     return;
   }
-  const t = THEMES[active.theme];
+  const t = THEMES[themeId()];
   const C = 15;
   drawBoard(ctx, 3, 3, C);
   ctx.strokeStyle = t.margins;
@@ -604,7 +618,7 @@ function syncSetting(s, behavior) {
 }
 
 function applyTheme() {
-  const t = THEMES[active.theme];
+  const t = THEMES[themeId()];
   const css = document.documentElement.style;
   css.setProperty('--topbar', t.topBar);
   css.setProperty('--frame', t.margins);
@@ -616,7 +630,7 @@ function applyTheme() {
 }
 
 function applySkin() {
-  setSnakeSkin(SKINS[active.skin]);
+  setSnakeSkin(SKINS[skinId()]);
 }
 
 // ---------- layout ----------
@@ -650,8 +664,8 @@ function drawGame(t) {
 
 
   const onBoard = new Set();
-  const flying = FLYING_MODES.has(game.mode);
   for (const f of game.foods) {
+    const flying = !!f.fly;
     const key = f.id ?? `${f.x},${f.y}`;
     onBoard.add(key);
     if (!foodBorn.has(key)) foodBorn.set(key, t);
@@ -662,7 +676,7 @@ function drawGame(t) {
     // Grid fruits sit in their square; flying fruits are positioned by centre.
     const cx = flying ? f.x * cell : (f.x + 0.5) * cell;
     const cy = flying ? f.y * cell : (f.y + 0.5) * cell;
-    if (game.mode === 'winged') drawWings(ctx, cx, cy, size, Math.floor((t + (f.id ?? 0) * 97) / 130) % 2 === 0);
+    if (f.fly === 'winged') drawWings(ctx, cx, cy, size, Math.floor((t + (f.id ?? 0) * 97) / 130) % 2 === 0);
     drawFruit(ctx, fruitKind(f), cx - size / 2, cy - size / 2 - cell * 0.03, size, { shadow: !flying });
   }
   for (const key of foodBorn.keys()) if (!onBoard.has(key)) foodBorn.delete(key);
@@ -773,10 +787,13 @@ function afterStep(ev, before, wallsBefore) {
     sfx.flip();
     updateScore();
   }
-  if (ev === 'eat' || (ev === 'win' && !FLYING_MODES.has(game.mode))) {
+  if (ev === 'eat' || ev === 'win') {
     const at = game.snake[0];
-    const f = before.find((q) => q.x === at.x && q.y === at.y);
-    eaten.push({ cx: at.x + 0.5, cy: at.y + 0.5, kind: f ? fruitKind(f) : prefs.fruit, t0: performance.now() });
+    const f = before.find((q) => !q.fly && q.x === at.x && q.y === at.y);
+    // (A win can also come from simply growing into the last square — no fruit then.)
+    if (f || ev === 'eat') {
+      eaten.push({ cx: at.x + 0.5, cy: at.y + 0.5, kind: f ? fruitKind(f) : prefs.fruit, t0: performance.now() });
+    }
   }
   portalFruits = null;
   if (ev === 'portal') {
@@ -835,7 +852,7 @@ function frame(t) {
       acc -= tick;
       doStep();
     }
-    if (FLYING_MODES.has(game.mode) && game.status === 'running') flyFruits(dt / 1000, t);
+    if (game.status === 'running' && game.foods.some((f) => f.fly)) flyFruits(dt / 1000, t);
   }
 
   drawGame(t);
@@ -954,6 +971,138 @@ document.addEventListener('fullscreenchange', () => {
   el.fullscreen.classList.toggle('on', !!document.fullscreenElement);
 });
 
+// ---------- chat actions ----------
+// Each action is what a chat command (and, later, a channel point reward) does.
+// They return a short description for the on-screen toast, or null to stay quiet.
+const inRound = () => screen === 'play' && game && ['ready', 'running', 'paused'].includes(game.status);
+const SIZE_ORDER = ['small', 'medium', 'large'];
+const pickOther = (ids, current) => {
+  const pool = ids.filter((id) => id !== current);
+  return pool[Math.floor(Math.random() * pool.length)];
+};
+
+const ACTIONS = {
+  wall() {
+    if (!inRound()) return null;
+    if (!spawnWall(game)) return 'tried to add a wall, but there was no room';
+    sfx.wall();
+    return 'added a wall';
+  },
+
+  fly() {
+    if (!inRound()) return null;
+    if (!addBonusFlyer(game)) return null;
+    sfx.portal();
+    return 'released a flying fruit';
+  },
+
+  size(arg) {
+    const current = boardSizeKey();
+    const i = SIZE_ORDER.indexOf(current);
+    let next = matchOption(arg, BOARD_SIZES);
+    if (arg === 'bigger' || arg === 'up') next = SIZE_ORDER[Math.min(i + 1, SIZE_ORDER.length - 1)];
+    if (arg === 'smaller' || arg === 'down') next = SIZE_ORDER[Math.max(i - 1, 0)];
+    if (!next) next = pickOther(SIZE_ORDER, current);
+    if (next === current) return null;
+    chatOverride.size = next;
+    const { cols, rows } = BOARD_SIZES[next];
+    if (inRound()) {
+      resizeBoard(game, cols, rows);
+      // Everything moved: drop any in-between animation state.
+      prevSnake = null;
+      lastSnap = null;
+      portalFruits = null;
+      eaten = [];
+      wallBorn.clear();
+      fitBoard();
+    } else if (screen !== 'play') {
+      newGame(); // preview it behind the menu
+    }
+    return `made the board ${BOARD_SIZES[next].label.toLowerCase()}`;
+  },
+
+  color(arg) {
+    const next = matchOption(arg, SKINS) ?? pickOther(Object.keys(SKINS), skinId());
+    chatOverride.skin = next;
+    applySkin();
+    repaintThemedIcons();
+    return `turned the snake ${SKINS[next].name.toLowerCase()}`;
+  },
+
+  mapcolor(arg) {
+    const next = matchOption(arg, THEMES) ?? pickOther(Object.keys(THEMES), themeId());
+    chatOverride.theme = next;
+    applyTheme();
+    repaintThemedIcons();
+    return `switched the board to ${THEMES[next].name}`;
+  },
+};
+
+function clearChatOverrides() {
+  const sizeChanged = chatOverride.size !== null;
+  chatOverride.size = chatOverride.skin = chatOverride.theme = null;
+  roundPlayed = false;
+  applyTheme();
+  applySkin();
+  repaintThemedIcons();
+  if (sizeChanged) newGame();
+}
+
+// Run an action on behalf of a viewer and credit them on screen.
+function runAction(action, arg, user) {
+  const what = ACTIONS[action]?.(arg);
+  if (what) toast(user, what);
+}
+
+// ---------- toasts ----------
+const MAX_TOASTS = 4;
+function toast(user, what) {
+  const box = $('toasts');
+  const t = document.createElement('div');
+  t.className = 'toast';
+  const name = document.createElement('b');
+  name.textContent = user; // textContent: usernames are untrusted
+  t.append(name, ` ${what}`);
+  box.append(t);
+  while (box.children.length > MAX_TOASTS) box.firstElementChild.remove();
+  setTimeout(() => t.classList.add('out'), 3200);
+  setTimeout(() => t.remove(), 3700);
+}
+
+// ---------- twitch chat ----------
+const router = new CommandRouter();
+function onChatMessage(msg) {
+  const req = router.handle(msg);
+  if (req && !req.cooldown) runAction(req.action, req.arg, req.user);
+}
+
+const chat = new TwitchChat({
+  onMessage: onChatMessage,
+  onStatus: (status) => {
+    const btn = $('btn-chat');
+    btn.dataset.status = status;
+    btn.title = chat.channel ? `Twitch chat: ${chat.channel} (${status})` : 'Connect Twitch chat';
+  },
+});
+
+// Channel comes from ?channel=name (remembered), or the chat button.
+function initChat() {
+  const param = new URLSearchParams(location.search).get('channel');
+  if (param !== null) store.set('snake.channel', param.trim());
+  const channel = store.get('snake.channel', '');
+  if (channel) chat.connect(channel);
+  else $('btn-chat').dataset.status = 'off';
+}
+
+$('btn-chat').addEventListener('click', () => {
+  const current = store.get('snake.channel', '');
+  const name = window.prompt('Twitch channel to read chat from (blank to disconnect):', current);
+  if (name === null) return;
+  store.set('snake.channel', name.trim());
+  if (name.trim()) chat.connect(name.trim());
+  else chat.disconnect();
+});
+
 // ---------- debug ----------
 // Open with ?debug to get window.snakeDebug for poking at the game from devtools.
 if (new URLSearchParams(location.search).has('debug')) {
@@ -962,6 +1111,7 @@ if (new URLSearchParams(location.search).has('debug')) {
     get progress() { return acc / tickMs(); }, // how far the head is into its current square (0..1)
     win() { game.status = 'won'; onGameEnd('win'); },
     lose() { game.status = 'over'; onGameEnd('die'); },
+    chat(user, text) { onChatMessage({ user, text }); }, // simulate a chat message
   };
 }
 
@@ -983,5 +1133,6 @@ buildSettings();
 initIcons();
 el.mute.classList.toggle('on', isMuted());
 newGame();
+initChat();
 showScreen('menu');
 requestAnimationFrame((t) => { lastTime = t; frame(t); });

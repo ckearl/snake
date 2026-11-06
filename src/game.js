@@ -37,7 +37,9 @@ export const GAME_MODES = {
   magnet: { name: 'Magnet' },
 };
 
-// Modes where fruits move freely (x, y are the fruit's centre in cell units).
+// Modes where fruits move freely. Flying is a per-fruit property (`fly`), so a
+// flying fruit can also be dropped into any mode (e.g. from chat). A flying
+// fruit's x, y are its centre in cell units; it also has a velocity vx, vy.
 export const FLYING_MODES = new Set(['winged', 'magnet']);
 export const FRUIT_RADIUS = 0.34; // cells
 export const WING_SPEED = 2.2; // cells per second
@@ -119,8 +121,7 @@ export function step(state) {
   if (state.walls.some((w) => same(w, next))) return die(state);
 
   // Flying fruits are caught continuously (updateFlyers), not by stepping onto a square.
-  const flying = FLYING_MODES.has(state.mode);
-  const eatIdx = flying ? -1 : state.foods.findIndex((f) => same(f, next));
+  const eatIdx = state.foods.findIndex((f) => !f.fly && same(f, next));
   const eating = eatIdx !== -1;
   const growing = eating || state.grow > 0;
 
@@ -168,7 +169,7 @@ export function step(state) {
     state.status = 'won';
     return 'win';
   }
-  refill(state);
+  if (!eatenFood.bonus) refill(state);
   if (state.mode === 'yinyang') {
     flip(state);
     return 'flip';
@@ -188,9 +189,10 @@ export function flip(state) {
 }
 
 // Top fruits back up after one is eaten: replace it, or drop a new random batch.
+// Bonus fruits (dropped in from chat) don't count toward the fruit count.
 function refill(state) {
   if (state.fruitCount === 'random') {
-    if (state.foods.length === 0) spawnFoods(state, batchSize(state));
+    if (!state.foods.some((f) => !f.bonus)) spawnFoods(state, batchSize(state));
   } else {
     spawnFoods(state, 1);
   }
@@ -202,13 +204,14 @@ function refill(state) {
 // cell units (the drawn, in-between-squares position); defaults to its square.
 // Returns the fruits eaten this frame.
 export function updateFlyers(state, dt, head = null) {
-  if (!FLYING_MODES.has(state.mode) || state.status !== 'running') return [];
+  if (state.status !== 'running' || !state.foods.some((f) => f.fly)) return [];
   const h = head ?? { x: state.snake[0].x + 0.5, y: state.snake[0].y + 0.5 };
   const r = FRUIT_RADIUS;
   const obstacles = [...state.snake.slice(1), ...state.walls];
 
   for (const f of state.foods) {
-    if (state.mode === 'magnet') {
+    if (!f.fly) continue;
+    if (f.fly === 'magnet') {
       // Ease the velocity toward "straight at the head, at MAGNET_SPEED".
       const dx = h.x - f.x;
       const dy = h.y - f.y;
@@ -235,13 +238,13 @@ export function updateFlyers(state, dt, head = null) {
 
   // Catch: a fruit touching the head gets eaten.
   const reach = 0.5 + r * 0.6;
-  const eaten = state.foods.filter((f) => Math.abs(f.x - h.x) < reach && Math.abs(f.y - h.y) < reach);
+  const eaten = state.foods.filter((f) => f.fly && Math.abs(f.x - h.x) < reach && Math.abs(f.y - h.y) < reach);
   if (!eaten.length) return [];
   state.foods = state.foods.filter((f) => !eaten.includes(f));
-  for (let i = 0; i < eaten.length; i++) {
+  for (const f of eaten) {
     state.score += 1;
     state.grow += 1;
-    refill(state);
+    if (!f.bonus) refill(state);
   }
   return eaten;
 }
@@ -375,18 +378,83 @@ export function spawnFoods(state, n) {
       const f = placeFood(state);
       if (!f) break;
       f.id = state.nextId++;
-      if (FLYING_MODES.has(state.mode)) {
-        // Centre of its square, heading off in a random direction.
-        const a = state.rng() * Math.PI * 2;
-        f.x += 0.5;
-        f.y += 0.5;
-        const v = state.mode === 'magnet' ? MAGNET_SPEED * 0.3 : WING_SPEED;
-        f.vx = Math.cos(a) * v;
-        f.vy = Math.sin(a) * v;
-      }
+      if (FLYING_MODES.has(state.mode)) makeFlyer(state, f, state.mode);
       state.foods.push(f);
     }
   }
+}
+
+// Turn a fruit placed on a square into a flying one ('winged' or 'magnet'):
+// centre of its square, heading off in a random direction.
+function makeFlyer(state, f, kind) {
+  const a = state.rng() * Math.PI * 2;
+  const v = kind === 'magnet' ? MAGNET_SPEED * 0.3 : WING_SPEED;
+  f.x += 0.5;
+  f.y += 0.5;
+  f.fly = kind;
+  f.vx = Math.cos(a) * v;
+  f.vy = Math.sin(a) * v;
+  return f;
+}
+
+// ---------- chat / external actions ----------
+// Drop one extra winged fruit (any mode). It's a bonus: not replaced once eaten.
+export function addBonusFlyer(state) {
+  const f = placeFood(state);
+  if (!f) return null;
+  f.id = state.nextId++;
+  f.bonus = true;
+  makeFlyer(state, f, 'winged');
+  state.foods.push(f);
+  return f;
+}
+
+// Change the board size mid-game.
+//  - Shrinking an axis: the new board is centred on the head; whatever falls
+//    outside is lost (the snake is cut off at its first segment outside).
+//  - Growing an axis: the old board is centred in the new one; nothing is lost.
+export function resizeBoard(state, cols, rows) {
+  if (cols === state.cols && rows === state.rows) return false;
+  const head = state.snake[0];
+  const offset = (oldN, newN, h) => (newN < oldN ? Math.floor(newN / 2) - h : Math.floor((newN - oldN) / 2));
+  const ox = offset(state.cols, cols, head.x);
+  const oy = offset(state.rows, rows, head.y);
+  const inside = (c) => c.x >= 0 && c.y >= 0 && c.x < cols && c.y < rows;
+  const move = (c) => ({ ...c, x: c.x + ox, y: c.y + oy });
+
+  const snake = [];
+  for (const c of state.snake.map(move)) {
+    if (!inside(c)) break;
+    snake.push(c);
+  }
+  state.snake = snake;
+
+  let foods = state.foods.map(move).filter(inside);
+  // A portal pair loses both ends if either is clipped.
+  foods = foods.filter((f) => !f.pair || foods.some((o) => o !== f && o.pair === f.pair));
+  state.foods = foods;
+  state.walls = state.walls.map(move).filter(inside);
+  state.jumps = state.jumps
+    .map((j) => ({ ...j, from: move(j.from), to: move(j.to) }))
+    .filter((j) => inside(j.from) && inside(j.to));
+  state.cols = cols;
+  state.rows = rows;
+  state.justTeleported = false;
+  state.leftExit = null;
+
+  // Walls that would now box the snake in are knocked down.
+  while (state.walls.length && !keepsBoardOpen(state)) {
+    state.walls.splice(Math.floor(state.rng() * state.walls.length), 1);
+  }
+  // Top the fruit back up to the normal count.
+  const regular = state.foods.filter((f) => !f.bonus);
+  if (state.fruitCount === 'random') {
+    if (!regular.length) spawnFoods(state, batchSize(state));
+  } else {
+    const have = state.mode === 'portal' ? regular.length / 2 : regular.length;
+    if (have < state.fruitCount) spawnFoods(state, state.fruitCount - have);
+  }
+  return true;
 }
 
 function freeCells(state, extraBlocked = []) {

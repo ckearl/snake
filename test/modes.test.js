@@ -197,7 +197,7 @@ test('winged mode: fruits spawn mid-square with a velocity', () => {
 
 test('winged mode: fruits fly and bounce off the board edges', () => {
   const g = running({ mode: 'winged', cols: 10, rows: 9 });
-  g.foods = [{ id: 1, x: 9.4, y: 4.5, vx: 2, vy: 0 }];
+  g.foods = [{ id: 1, fly: 'winged', x: 9.4, y: 4.5, vx: 2, vy: 0 }];
   g.snake = [{ x: 0, y: 8 }, { x: 0, y: 7 }];
   updateFlyers(g, 0.5);
   const f = g.foods[0];
@@ -208,7 +208,7 @@ test('winged mode: fruits fly and bounce off the board edges', () => {
 test('winged mode: fruits bounce off the snake body', () => {
   const g = running({ mode: 'winged', cols: 10, rows: 9 });
   g.snake = [{ x: 0, y: 0 }, { x: 5, y: 4 }, { x: 5, y: 5 }];
-  g.foods = [{ id: 1, x: 3.5, y: 4.5, vx: 2, vy: 0 }];
+  g.foods = [{ id: 1, fly: 'winged', x: 3.5, y: 4.5, vx: 2, vy: 0 }];
   updateFlyers(g, 1); // 2 squares of travel: reaches the body at x=5 and bounces
   const f = g.foods[0];
   assert.ok(f.vx < 0, 'bounced back');
@@ -218,7 +218,7 @@ test('winged mode: fruits bounce off the snake body', () => {
 test('winged mode: touching the head eats the fruit and grows next tick', () => {
   const g = running({ mode: 'winged', cols: 10, rows: 9 });
   const h = g.snake[0];
-  g.foods = [{ id: 1, x: h.x + 1.2, y: h.y + 0.5, vx: -2, vy: 0 }];
+  g.foods = [{ id: 1, fly: 'winged', x: h.x + 1.2, y: h.y + 0.5, vx: -2, vy: 0 }];
   const eaten = updateFlyers(g, 0.2);
   assert.equal(eaten.length, 1);
   assert.equal(g.score, 1);
@@ -233,7 +233,7 @@ test('winged mode: touching the head eats the fruit and grows next tick', () => 
 test('winged mode: stepping onto a fruit square does not eat (only touching does)', () => {
   const g = running({ mode: 'winged', cols: 10, rows: 9 });
   const h = g.snake[0];
-  g.foods = [{ id: 1, x: 0.5, y: 0.5, vx: 0, vy: 0 }];
+  g.foods = [{ id: 1, fly: 'winged', x: 0.5, y: 0.5, vx: 0, vy: 0 }];
   // Nothing at the next square; stepping just moves.
   assert.equal(step(g), 'move');
   assert.equal(g.snake[0].x, h.x + 1);
@@ -269,7 +269,7 @@ test('magnet mode: fruits are drawn toward the head and get eaten', () => {
   const g = running({ mode: 'magnet', cols: 17, rows: 15 });
   const h = g.snake[0];
   const head = { x: h.x + 0.5, y: h.y + 0.5 };
-  g.foods = [{ id: 1, x: head.x + 5, y: head.y + 4, vx: 0, vy: 0 }];
+  g.foods = [{ id: 1, fly: 'magnet', x: head.x + 5, y: head.y + 4, vx: 0, vy: 0 }];
   const d0 = Math.hypot(g.foods[0].x - head.x, g.foods[0].y - head.y);
   updateFlyers(g, 0.5);
   const f = g.foods[0];
@@ -287,7 +287,7 @@ test('magnet mode: the body still blocks a fruit', () => {
   const g = running({ mode: 'magnet', cols: 17, rows: 15 });
   // Head at (2,7); a wall of body squares at x=5 between it and the fruit.
   g.snake = [{ x: 2, y: 7 }, ...Array.from({ length: 15 }, (_, y) => ({ x: 5, y }))];
-  g.foods = [{ id: 1, x: 9.5, y: 7.5, vx: 0, vy: 0 }];
+  g.foods = [{ id: 1, fly: 'magnet', x: 9.5, y: 7.5, vx: 0, vy: 0 }];
   for (let i = 0; i < 100; i++) updateFlyers(g, 0.05);
   assert.ok(g.foods[0].x >= 6 + FRUIT_RADIUS - 1e-6, `stayed behind the body (x=${g.foods[0].x.toFixed(2)})`);
   assert.equal(g.score, 0);
