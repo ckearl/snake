@@ -71,10 +71,41 @@
           <button id="btn-shuffle" class="btn icon-only shuffle" aria-label="Shuffle all settings" title="Shuffle">
             <svg viewBox="0 0 24 24"><path d="M3 7h4l10 10h4M3 17h4l10-10h4M18 4l3 3-3 3M18 14l3 3-3 3" /></svg>
           </button>
+          <button id="btn-stream" class="btn icon-only shuffle" aria-label="Stream settings" title="Stream settings">
+            <svg viewBox="0 0 24 24"><circle class="fill" cx="12" cy="12" r="2.2" /><path d="M8 8a5.5 5.5 0 0 0 0 8M16 8a5.5 5.5 0 0 1 0 8M5 5a9.8 9.8 0 0 0 0 14M19 5a9.8 9.8 0 0 1 0 14" /></svg>
+          </button>
           <button id="btn-back" class="btn icon-only" aria-label="Done">
             <svg viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5" /></svg>
           </button>
         </div>
+      </div>
+    </div>
+
+    <!-- Stream settings: Twitch channel + which chat commands are on and their cooldowns -->
+    <div id="stream" class="overlay" hidden>
+      <div class="panel wide">
+        <div class="card stream-card">
+          <h2>Stream</h2>
+
+          <section>
+            <h3>Twitch chat</h3>
+            <form id="channel-form" class="channel-row" autocomplete="off">
+              <input id="channel-input" type="text" placeholder="channel name" spellcheck="false" aria-label="Twitch channel" />
+              <button id="channel-connect" class="mini-btn" type="submit">Connect</button>
+            </form>
+            <p id="channel-status" class="status-line"></p>
+          </section>
+
+          <section>
+            <h3>Chat commands</h3>
+            <div class="cmd-head"><span>On</span><span>Command</span><span>Cooldown</span></div>
+            <div id="cmd-rows" class="cmd-rows"></div>
+            <button id="cmd-reset" class="mini-btn subtle" type="button">Reset to defaults</button>
+          </section>
+        </div>
+        <button id="stream-done" class="btn icon-only" aria-label="Done">
+          <svg viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5" /></svg>
+        </button>
       </div>
     </div>
   </div>

@@ -13,7 +13,7 @@ import {
 } from './critters.js';
 import { makeFireworks, drawFireworks, drawDizzyStars } from './effects.js';
 import { sfx, isMuted, setMuted } from './sound.js';
-import { CommandRouter, matchOption } from './commands.js';
+import { CommandRouter, matchOption, COMMANDS, loadCommandConfig } from './commands.js';
 import { TwitchChat } from './chat.js';
 
 const MAX_CELL = 56;
@@ -44,6 +44,7 @@ const el = {
   hint: $('hint'),
   menu: $('menu'),
   settings: $('settings'),
+  stream: $('stream'),
   lastScore: $('last-score'),
   bestScore: $('best-score'),
   scene: $('scene'),
@@ -123,6 +124,7 @@ function showScreen(name) {
   clearTimeout(deathTimer);
   el.menu.hidden = name !== 'menu';
   el.settings.hidden = name !== 'settings';
+  el.stream.hidden = name !== 'stream';
   if (name === 'menu') {
     if (roundPlayed) clearChatOverrides();
     pickSceneFruit();
@@ -133,6 +135,8 @@ function showScreen(name) {
   } else if (name === 'settings') {
     for (const s of SETTINGS) syncSetting(s, 'instant');
     SETTINGS[0].track.focus({ preventScroll: true });
+  } else if (name === 'stream') {
+    syncStreamPanel();
   }
 }
 
@@ -899,6 +903,13 @@ function start() {
 
 // ---------- input ----------
 window.addEventListener('keydown', (e) => {
+  // Typing in the stream panel's fields shouldn't trigger anything.
+  const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+  if (screen === 'stream') {
+    if (e.code === 'Escape') closeStream();
+    return;
+  }
+  if (typing) return;
   // Global hotkeys (any screen). Skip when a modifier is held so Cmd+F etc. still work.
   if (!e.metaKey && !e.ctrlKey && !e.altKey && !e.repeat) {
     if (e.code === 'KeyT') { toggleTimer(); return; }
@@ -1032,10 +1043,11 @@ const ACTIONS = {
   },
 
   fruit(arg) {
-    const aliases = { basket: MIXED, mix: MIXED, mixed: MIXED };
-    const next = aliases[arg?.replace(/[^a-z]/g, '')] ?? matchOption(arg, OPTIONS.fruit)
+    // Chat text is untrusted: only look up real alias keys (not e.g. "constructor").
+    const aliases = new Map([['basket', MIXED], ['mix', MIXED], ['mixed', MIXED]]);
+    const next = aliases.get(arg?.replace(/[^a-z]/g, '')) ?? matchOption(arg, OPTIONS.fruit)
       ?? pickOther(Object.keys(OPTIONS.fruit), fruitId());
-    if (next === fruitId()) return null;
+    if (!Object.hasOwn(OPTIONS.fruit, next) || next === fruitId()) return null;
     chatOverride.fruit = next;
     paintFruitIcons();
     pickSceneFruit();
@@ -1043,15 +1055,16 @@ const ACTIONS = {
   },
 
   speed(arg) {
-    const aliases = { turtle: 'slow', snake: 'normal', bunny: 'fast', medium: 'normal' };
+    // Chat text is untrusted: only look up real alias keys (not e.g. "constructor").
+    const aliases = new Map([['turtle', 'slow'], ['snake', 'normal'], ['bunny', 'fast'], ['medium', 'normal']]);
     const order = ['slow', 'normal', 'fast'];
     const current = speedId();
     const i = order.indexOf(current);
-    let next = aliases[arg] ?? matchOption(arg, SPEEDS);
+    let next = aliases.get(arg) ?? matchOption(arg, SPEEDS);
     if (arg === 'faster' || arg === 'up') next = order[Math.min(i + 1, order.length - 1)];
     if (arg === 'slower' || arg === 'down') next = order[Math.max(i - 1, 0)];
     if (!next) next = pickOther(order, current);
-    if (next === current) return null;
+    if (!Object.hasOwn(SPEEDS, next) || next === current) return null;
     // Keep the head at the same point between squares at the new pace.
     const before = tickMs();
     chatOverride.speed = next;
@@ -1103,7 +1116,12 @@ function toast(user, what) {
 }
 
 // ---------- twitch chat ----------
-const router = new CommandRouter();
+let commandConfig = loadCommandConfig(JSON.parse(store.get('snake.commands', '{}') || '{}'));
+const router = new CommandRouter({ config: commandConfig });
+function saveCommandConfig() {
+  store.set('snake.commands', JSON.stringify(commandConfig));
+  router.setConfig(commandConfig);
+}
 function onChatMessage(msg) {
   const req = router.handle(msg);
   if (req && !req.cooldown) runAction(req.action, req.arg, req.user);
@@ -1115,6 +1133,7 @@ const chat = new TwitchChat({
     const btn = $('btn-chat');
     btn.dataset.status = status;
     btn.title = chat.channel ? `Twitch chat: ${chat.channel} (${status})` : 'Connect Twitch chat';
+    syncChannelStatus();
   },
 });
 
@@ -1127,13 +1146,115 @@ function initChat() {
   else $('btn-chat').dataset.status = 'off';
 }
 
-$('btn-chat').addEventListener('click', () => {
-  const current = store.get('snake.channel', '');
-  const name = window.prompt('Twitch channel to read chat from (blank to disconnect):', current);
-  if (name === null) return;
-  store.set('snake.channel', name.trim());
-  if (name.trim()) chat.connect(name.trim());
-  else chat.disconnect();
+// ---------- stream settings panel ----------
+let streamReturn = 'menu'; // where Done goes back to
+
+function openStream() {
+  if (screen === 'stream') return;
+  streamReturn = screen;
+  if (screen === 'play' && game?.status === 'running') pause();
+  showScreen('stream');
+}
+
+function closeStream() {
+  if (streamReturn === 'play') {
+    // Back to the (paused) game; the pause pill is still showing.
+    screen = 'play';
+    el.stream.hidden = true;
+    document.activeElement?.blur();
+  } else {
+    showScreen(streamReturn);
+  }
+}
+
+function syncChannelStatus() {
+  const line = $('channel-status');
+  const status = $('btn-chat').dataset.status ?? 'off';
+  line.dataset.status = status;
+  line.textContent = !chat.channel || status === 'off'
+    ? 'Not connected'
+    : status === 'on' ? `Reading chat in #${chat.channel}` : `Connecting to #${chat.channel}…`;
+  $('channel-connect').textContent = chat.channel && status !== 'off' ? 'Disconnect' : 'Connect';
+}
+
+function syncStreamPanel() {
+  $('channel-input').value = store.get('snake.channel', '');
+  syncChannelStatus();
+  const rows = $('cmd-rows');
+  rows.replaceChildren();
+  for (const [name, def] of Object.entries(COMMANDS)) {
+    const cfg = commandConfig[name];
+    const row = document.createElement('div');
+    row.className = `cmd-row${cfg.enabled ? '' : ' off'}`;
+
+    const sw = document.createElement('label');
+    sw.className = 'switch';
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = cfg.enabled;
+    box.setAttribute('aria-label', `Enable !${name}`);
+    box.addEventListener('change', () => {
+      cfg.enabled = box.checked;
+      row.classList.toggle('off', !cfg.enabled);
+      saveCommandConfig();
+    });
+    sw.append(box, document.createElement('span'));
+
+    const label = document.createElement('div');
+    label.className = 'cmd-name';
+    const b = document.createElement('b');
+    b.textContent = `!${name}`;
+    const help = document.createElement('small');
+    help.textContent = def.help;
+    label.append(b, help);
+
+    const cd = document.createElement('label');
+    cd.className = 'cooldown';
+    const num = document.createElement('input');
+    num.type = 'number';
+    num.min = '0';
+    num.max = '600';
+    num.step = '0.5';
+    num.value = String(cfg.cooldown / 1000);
+    num.setAttribute('aria-label', `!${name} cooldown in seconds`);
+    num.addEventListener('change', () => {
+      const secs = Math.min(600, Math.max(0, Number(num.value) || 0));
+      num.value = String(secs);
+      cfg.cooldown = Math.round(secs * 1000);
+      saveCommandConfig();
+    });
+    const unit = document.createElement('span');
+    unit.textContent = 's';
+    cd.append(num, unit);
+
+    row.append(sw, label, cd);
+    rows.append(row);
+  }
+}
+
+$('btn-chat').addEventListener('click', openStream);
+$('btn-stream').addEventListener('click', openStream);
+$('stream-done').addEventListener('click', closeStream);
+
+$('channel-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const name = $('channel-input').value.trim().replace(/^#/, '');
+  const connected = chat.channel && $('btn-chat').dataset.status !== 'off';
+  if (connected && name === chat.channel) {
+    chat.disconnect(); // the button reads "Disconnect"
+    chat.channel = null;
+    store.set('snake.channel', '');
+  } else if (name) {
+    store.set('snake.channel', name);
+    chat.connect(name);
+  }
+  syncChannelStatus();
+});
+
+$('cmd-reset').addEventListener('click', () => {
+  commandConfig = loadCommandConfig();
+  saveCommandConfig();
+  syncStreamPanel();
 });
 
 // ---------- debug ----------

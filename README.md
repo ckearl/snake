@@ -27,11 +27,15 @@ The shuffle button at the bottom of Settings randomises every row.
 **Speed:** 135 ms per tile × multiplier — turtle 1.33 (180 ms), snake 1 (135 ms), bunny 0.67 (90 ms). Movement is smoothly interpolated between tiles.
 
 ## Twitch chat
-Open the game with `?channel=yourchannel` (e.g. `http://localhost:8080/?channel=ckearl`), or click the
-speech-bubble button in the top bar and type the channel. It reads chat anonymously — no login. The dot
-on the button is green when connected. The channel is remembered.
+Open the game with `?channel=yourchannel` (e.g. `http://localhost:8080/?channel=ckearl`), or open the
+**Stream** panel (speech-bubble button in the top bar, or the broadcast button at the bottom of Settings)
+and enter the channel. It reads chat anonymously — no login. The dot on the button is green when
+connected. The channel is remembered.
 
-| Command | Effect | Cooldown |
+The Stream panel also lets you turn each command on/off and set its cooldown (saved; applies
+immediately). Opening it mid-game pauses the game.
+
+| Command | Effect | Default cooldown |
 |---|---|---|
 | `!wall` | Adds a wall block (never in front of you, never boxes you in) — any mode | 2s |
 | `!fly` | Adds a bonus winged fruit (not replaced once eaten) — any mode | 2s |

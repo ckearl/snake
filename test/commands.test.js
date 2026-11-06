@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseCommand, matchOption, CommandRouter } from '../src/commands.js';
+import { parseCommand, matchOption, CommandRouter, loadCommandConfig, COMMANDS } from '../src/commands.js';
 import { SKINS, THEMES } from '../src/themes.js';
 import { FRUITS } from '../src/fruits.js';
 import { SPEEDS } from '../src/game.js';
@@ -64,4 +64,44 @@ test('!fruit and !speed parse, with loose names', () => {
   assert.equal(matchOption('JALAPENO', FRUITS), 'jalapeno');
   assert.equal(matchOption('white turnip', FRUITS), 'turnip');
   assert.equal(matchOption('fast', SPEEDS), 'fast');
+});
+
+test('command config: defaults, merging saved values, ignoring junk', () => {
+  const def = loadCommandConfig();
+  for (const [name, c] of Object.entries(COMMANDS)) {
+    assert.deepEqual(def[name], { enabled: true, cooldown: c.cooldown });
+  }
+  const cfg = loadCommandConfig({
+    wall: { enabled: false, cooldown: 500 },
+    fly: { cooldown: -5 },
+    size: { cooldown: 'lots', enabled: 'yes' },
+    bogus: { enabled: true },
+  });
+  assert.deepEqual(cfg.wall, { enabled: false, cooldown: 500 });
+  assert.equal(cfg.fly.cooldown, 0, 'clamped to 0');
+  assert.deepEqual(cfg.size, { enabled: true, cooldown: COMMANDS.size.cooldown }, 'invalid values fall back');
+  assert.ok(!('bogus' in cfg));
+});
+
+test('CommandRouter: honours disabled commands and custom cooldowns', () => {
+  let t = 0;
+  const r = new CommandRouter({ now: () => t, config: loadCommandConfig({ wall: { enabled: false }, fly: { cooldown: 10000 } }) });
+  assert.equal(r.handle({ user: 'a', text: '!wall' }), null, 'disabled');
+  assert.equal(r.handle({ user: 'a', text: '!fly' }).action, 'fly');
+  t = 5000;
+  assert.ok(r.handle({ user: 'a', text: '!fly' }).cooldown > 0, 'custom 10s cooldown');
+  r.setConfig(loadCommandConfig({ wall: { enabled: true }, fly: { cooldown: 0 } }));
+  assert.equal(r.handle({ user: 'a', text: '!wall' }).action, 'wall', 're-enabled live');
+  assert.equal(r.handle({ user: 'a', text: '!fly' }).action, 'fly', 'cooldown change applies live');
+});
+
+test('chat text cannot reach built-in object properties', () => {
+  for (const name of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+    assert.equal(parseCommand(`!${name}`), null, name);
+  }
+  const r = new CommandRouter({ now: () => 0 });
+  assert.equal(r.handle({ user: 'x', text: '!constructor' }), null);
+  // Option names are matched against own entries only.
+  assert.equal(matchOption('constructor', SPEEDS), null);
+  assert.equal(matchOption('__proto__', FRUITS), null);
 });
