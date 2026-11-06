@@ -9,9 +9,9 @@ export const THEMES = {
   snowflake: T('Snowflake', 'snowflake', ['#75898A', '#879FA1', '#DEECED', '#D1E4E6']),
   volcano: T('Volcano', 'volcano', ['#762D2D', '#A33E3E', '#6E3535', '#673232']),
   desert: T('Desert', 'desert', ['#725E1D', '#977B26', '#F2D78C', '#ECCD79']),
-  forest: T('Forest', 'forest', ['#202822', '#253227', '#3F5543', '#3F5543']),
+  forest: T('Forest', 'forest', ['#202822', '#253227', '#3F5543', '#3B4F3F']),
   ocean: T('Ocean', 'ocean', ['#1D457C', '#275BA5', '#B4D0F9', '#A3C5F5']),
-  space: T('Space', 'space', ['#432A6F', '#604096', '#432C68', '#432C68']),
+  space: T('Space', 'space', ['#432A6F', '#604096', '#432C68', '#3D285D']),
 };
 export const DEFAULT_THEME = 'ocean';
 
