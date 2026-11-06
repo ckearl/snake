@@ -1,6 +1,7 @@
 // Canvas drawing: board, snake, and pixel sprites. No game rules here.
 import { SKINS, DEFAULT_SKIN, skinColor, shade } from './themes.js';
 import { FRUITS, DEFAULT_FRUIT } from './fruits.js';
+import { BOX } from './critters.js';
 
 export const PALETTE = {
   cellA: '#B4D0F9',
@@ -12,10 +13,12 @@ export const PALETTE = {
   eyeWhite: '#FFFFFF',
   pupil: '#1B1238',
   tongue: '#E8364F',
+  accent: '#976620', // board markings (box targets, mine fields)
+  sweat: '#9BDCFF',
 };
 
-export function setBoardColors({ light, dark, skyTop, skyBottom, wall = skyTop }) {
-  Object.assign(PALETTE, { cellA: light, cellB: dark, skyTop, skyBottom, wall });
+export function setBoardColors({ light, dark, skyTop, skyBottom, wall = skyTop, accent = PALETTE.accent }) {
+  Object.assign(PALETTE, { cellA: light, cellB: dark, skyTop, skyBottom, wall, accent });
 }
 
 let currentSkin = SKINS[DEFAULT_SKIN];
@@ -131,6 +134,33 @@ export function drawWall(ctx, x, y, cell, scale = 1) {
   ctx.fillRect(px, py, s, s - b);
   ctx.fillStyle = PALETTE.wall;
   ctx.fillRect(px + b, py + b, s - b * 2, s - b * 3);
+}
+
+// Box mode crate at (x, y) in cell units (fractional while it's being pushed).
+export function drawBox(ctx, x, y, cell, scale = 1, alpha = 1) {
+  const size = cell * 0.98 * scale;
+  ctx.globalAlpha = alpha;
+  drawSprite(ctx, BOX, (x + 0.5) * cell - size / 2, (y + 0.5) * cell - size / 2, size, { shadow: true });
+  ctx.globalAlpha = 1;
+}
+
+// Box target: corner brackets in the board accent around a faintly tinted
+// square, breathing gently so it's easy to spot.
+export function drawTarget(ctx, x, y, cell, ms) {
+  const u = Math.max(2, Math.round(cell * 0.09));
+  const x0 = Math.round(x * cell + cell * 0.1);
+  const y0 = Math.round(y * cell + cell * 0.1);
+  const s = Math.round(cell * 0.8);
+  const arm = Math.round(s * 0.34);
+  ctx.globalAlpha = 0.16;
+  ctx.fillStyle = PALETTE.accent;
+  ctx.fillRect(x0, y0, s, s);
+  ctx.globalAlpha = 0.75 + 0.25 * Math.sin(ms / 260);
+  for (const [cx, cy, sx, sy] of [[x0, y0, 1, 1], [x0 + s, y0, -1, 1], [x0, y0 + s, 1, -1], [x0 + s, y0 + s, -1, -1]]) {
+    ctx.fillRect(sx > 0 ? cx : cx - arm, sy > 0 ? cy : cy - u, arm, u);
+    ctx.fillRect(sx > 0 ? cx : cx - u, sy > 0 ? cy : cy - arm, u, arm);
+  }
+  ctx.globalAlpha = 1;
 }
 
 // Winged fruit: little pixel wings either side of a fruit centred at (cx, cy) px,
@@ -295,7 +325,7 @@ function tubeRect(ctx, a, b, w, capA, capB, cell, ox = 0, oy = 0) {
 // eyes: 'normal' | 'closed' | 'dizzy' (pupils spin) | 'happy' (^ ^). ms drives the spin.
 export function drawSnakePath(ctx, rawPts, cell, {
   dir = 'right', dead = false, eyes = dead ? 'closed' : 'normal', ms = 0,
-  tongue = false, skin = null, shadow = true, mouth = 0,
+  tongue = false, skin = null, shadow = true, mouth = 0, strain = false,
 } = {}) {
   // Split into runs at null breaks (portals), dropping zero-length steps.
   const runs = [];
@@ -352,8 +382,14 @@ export function drawSnakePath(ctx, rawPts, cell, {
     off += lens[r];
   });
 
-  // Head: a slightly larger square riding on the front of the tube.
-  const h = runs[0][0];
+  // Head: a slightly larger square riding on the front of the tube. Straining
+  // (pushing a box) makes it tremble a pixel side to side.
+  let h = runs[0][0];
+  if (strain && Math.floor(ms / 70) % 2) {
+    const [sx, sy] = DIR_VEC[dir];
+    const j = Math.max(1, Math.round(cell * 0.03)) / cell;
+    h = { x: h.x - sy * j, y: h.y + sx * j };
+  }
   const hs = HEAD_SIZE * cell;
   const hx = Math.round(h.x * cell - hs / 2);
   const hy = Math.round(h.y * cell - hs / 2);
@@ -380,7 +416,9 @@ export function drawSnakePath(ctx, rawPts, cell, {
   ctx.fillRect(hx, hy, hsz, hsz);
   ctx.fillStyle = headCol;
   ctx.fillRect(hx + border, hy + border, hsz - border * 2, hsz - border * 2);
-  drawHead(ctx, h.x * cell, h.y * cell, cell, dir, { eyes, ms, tongue: tongue && eyes === 'normal', ring, mouth });
+  drawHead(ctx, h.x * cell, h.y * cell, cell, dir, {
+    eyes: strain && eyes === 'normal' ? 'strain' : eyes, ms, tongue: tongue && eyes === 'normal' && !strain, ring, mouth,
+  });
 }
 
 // Tail tip disappearing into the head's mouth: a dark lip line across the joint.
@@ -447,6 +485,22 @@ function drawHead(ctx, cx, cy, cell, dir, { eyes, ms, tongue, ring, mouth = 0 })
     const ex = Math.round(cx - dx * cell * 0.06 + px * sgn * cell * 0.2 - eye / 2);
     const ey = Math.round(cy - dy * cell * 0.06 + py * sgn * cell * 0.2 - eye / 2);
 
+    if (eyes === 'strain') {
+      // Squeezed-shut > < eyes, each pointing in toward the other: a big push.
+      const u = Math.max(1, Math.round(eye / 4));
+      const ax = -sgn * px;
+      const ay = -sgn * py;
+      const ecx = ex + eye / 2;
+      const ecy = ey + eye / 2;
+      ctx.fillStyle = PALETTE.pupil;
+      for (const [gx, gy] of [[0, 0], [1, 1], [2, 2], [1, 3], [0, 4]]) {
+        const ox = (gx - 1) * ax - (gy - 2) * ay;
+        const oy = (gx - 1) * ay + (gy - 2) * ax;
+        ctx.fillRect(Math.round(ecx + ox * u - u / 2), Math.round(ecy + oy * u - u / 2), u, u);
+      }
+      return;
+    }
+
     if (eyes === 'happy') {
       // Closed, smiling eyes: a little ^ arch, no whites.
       const u = Math.max(1, Math.round(eye / 4));
@@ -476,6 +530,26 @@ function drawHead(ctx, cx, cy, cell, dir, { eyes, ms, tongue, ring, mouth = 0 })
       ctx.fillRect(ex + off + Math.round(dx * off), ey + off + Math.round(dy * off), pupil, pupil);
     }
   });
+
+  if (eyes === 'strain') {
+    // Every so often a bead of sweat flicks off the back corner of the head
+    // (upper side, so it never lands on the box or the body) and fades.
+    const k = (ms % 900) / 900;
+    if (k < 0.55) {
+      const u = Math.max(1, Math.round(cell / 22));
+      const [ox, oy] = dx ? [-dx * 0.3, -0.56] : [0.56, -dy * 0.3];
+      const fly = 0.12 * (k / 0.55);
+      const sx = Math.round(cx + (ox + Math.sign(ox) * fly * (dx ? 0.5 : 1)) * cell);
+      const sy = Math.round(cy + (oy - fly * (dx ? 1 : 0.5)) * cell);
+      ctx.globalAlpha = k < 0.35 ? 1 : (0.55 - k) / 0.2;
+      ctx.fillStyle = PALETTE.sweat;
+      ctx.fillRect(sx, sy - u, u, u);
+      ctx.fillRect(sx - u, sy, u * 3, u * 2);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(sx - u, sy, u, u);
+      ctx.globalAlpha = 1;
+    }
+  }
 }
 
 // ---------- menu scene: snake curled around an orange ----------

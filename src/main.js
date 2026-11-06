@@ -5,11 +5,12 @@ import {
 } from './game.js';
 import {
   sizeCanvas, drawBoard, drawSnake, drawSnakePath, interpolateSnake, snakePoints, drawWall, drawWings, drawFruit, drawSprite, drawCrown, drawScene, setBoardColors, setSnakeSkin,
+  drawBox, drawTarget,
 } from './render.js';
-import { THEMES, SKINS, DEFAULT_THEME, DEFAULT_SKIN, THEME_ICONS, shade } from './themes.js';
+import { THEMES, SKINS, DEFAULT_THEME, DEFAULT_SKIN, THEME_ICONS, shade, boardAccent } from './themes.js';
 import { FRUITS, DEFAULT_FRUIT, BASKET } from './fruits.js';
 import {
-  BUNNY, TURTLE, WALL_ICON, PORTAL_ICON, YINYANG_ICON, MAGNET_ICON,
+  BUNNY, TURTLE, WALL_ICON, PORTAL_ICON, YINYANG_ICON, MAGNET_ICON, BOX,
 } from './critters.js';
 import { makeFireworks, drawFireworks, drawDizzyStars } from './effects.js';
 import { sfx, isMuted, setMuted } from './sound.js';
@@ -87,6 +88,8 @@ let lastTime = 0;
 const wallBorn = new Map(); // "x,y" -> time the wall appeared (for pop-in)
 const pairKinds = new Map(); // portal pair id -> fruit kind (distinct per pair on the board)
 const foodBorn = new Map(); // "x,y" -> time the fruit appeared (for pop-in)
+const boxBorn = new Map(); // box id -> time it appeared (for pop-in)
+let boxGone = []; // boxes leaving the board: { x, y, to?, t0 } (released onto a target, or knocked away)
 let deathTimer = null;
 let prevSnake = null; // snake before the latest step (for smooth interpolation)
 let endFx = null; // { type: 'lose' | 'win', t0, fireworks? }
@@ -102,6 +105,8 @@ function newGame() {
   const { cols, rows } = BOARD_SIZES[boardSizeKey()];
   game = createGame({ cols, rows, fruitCount: FRUIT_COUNTS[active.count], mode: active.mode });
   foodBorn.clear();
+  boxBorn.clear();
+  boxGone = [];
   wallBorn.clear();
   pairKinds.clear();
   prevSnake = null;
@@ -347,7 +352,7 @@ function modeIcon(id) {
 // Classic: a tiny board with a snake heading for a fruit. The other modes are
 // simple pixel sprites: a brick wall, two offset portals.
 const MODE_SPRITES = {
-  wall: WALL_ICON, portal: PORTAL_ICON, yinyang: YINYANG_ICON, magnet: MAGNET_ICON,
+  wall: WALL_ICON, portal: PORTAL_ICON, yinyang: YINYANG_ICON, magnet: MAGNET_ICON, box: BOX,
 };
 function paintModeIcon(c) {
   const id = c.dataset.modeIcon;
@@ -632,7 +637,9 @@ function applyTheme() {
   css.setProperty('--btn', shade(t.margins, 0.15));
   css.setProperty('--btn-hover', shade(t.margins, 0.25));
   css.setProperty('--btn-edge', shade(t.topBar, -0.25));
-  setBoardColors({ light: t.light, dark: t.dark, skyTop: t.margins, skyBottom: shade(t.margins, 0.4), wall: t.margins });
+  setBoardColors({
+    light: t.light, dark: t.dark, skyTop: t.margins, skyBottom: shade(t.margins, 0.4), wall: t.margins, accent: boardAccent(t),
+  });
 }
 
 function applySkin() {
@@ -669,6 +676,13 @@ function drawGame(t) {
   }
 
 
+  // Box targets lie flat on the board, under everything else.
+  for (const tg of game.targets) drawTarget(ctx, tg.x, tg.y, cell, t);
+
+  // How far through the current tile the snake is (0..1). Paused keeps its place.
+  const moving = game.status === 'running' || game.status === 'paused';
+  const alpha = moving && prevSnake ? Math.min(1, acc / tickMs()) : 1;
+
   const onBoard = new Set();
   for (const f of game.foods) {
     const flying = !!f.fly;
@@ -677,6 +691,7 @@ function drawGame(t) {
     if (!foodBorn.has(key)) foodBorn.set(key, t);
     // Little pop-in when a new fruit appears.
     const p = Math.min(1, (t - foodBorn.get(key)) / 180);
+    if (p < 0) continue; // not out yet (a box is still sliding onto its target)
     const scale = p < 1 ? 0.4 + 0.75 * p - 0.15 * p * p : 1;
     const size = cell * (flying ? 0.78 : 0.9) * scale;
     // Grid fruits sit in their square; flying fruits are positioned by centre.
@@ -687,9 +702,7 @@ function drawGame(t) {
   }
   for (const key of foodBorn.keys()) if (!onBoard.has(key)) foodBorn.delete(key);
 
-  // How far through the current tile the snake is (0..1). Paused keeps its place.
-  const moving = game.status === 'running' || game.status === 'paused';
-  const alpha = moving && prevSnake ? Math.min(1, acc / tickMs()) : 1;
+  drawBoxes(ctx, t, alpha);
 
   // Portal pair just entered: both fruits stay until the head reaches the entry,
   // then vanish together as it goes through.
@@ -714,6 +727,7 @@ function drawGame(t) {
   const mouth = mk >= 0 && mk < 1 ? Math.sin(Math.PI * mk) : 0;
   const opts = {
     dir: game.dir, tongue: live && tongueOut(t) && !mouth, ms: t, jumps: game.jumps, mouth,
+    strain: moving && game.pushing,
   };
 
   if (game.status === 'over' && endFx?.type === 'lose') {
@@ -725,6 +739,37 @@ function drawGame(t) {
     drawSnakePath(ctx, interpolateSnake(game.snake, prevSnake, alpha, game.jumps), cell, opts);
   } else {
     drawSnake(ctx, game.snake, cell, opts);
+  }
+}
+
+// Box mode crates. A pushed box slides along with the head; a released one
+// slides onto its target and sinks away as the fruit pops out; one knocked into
+// a wall shrinks away while a fresh one pops in somewhere else.
+function drawBoxes(ctx, t, alpha) {
+  const before = prevSnake && lastSnap ? lastSnap.boxes : [];
+  for (const b of game.boxes) {
+    if (!boxBorn.has(b.id)) boxBorn.set(b.id, t);
+    const p = Math.min(1, (t - boxBorn.get(b.id)) / 220);
+    const prev = before.find((q) => q.id === b.id);
+    const x = prev && alpha < 1 ? prev.x + (b.x - prev.x) * alpha : b.x;
+    const y = prev && alpha < 1 ? prev.y + (b.y - prev.y) * alpha : b.y;
+    drawBox(ctx, x, y, cell, p < 1 ? 0.3 + 0.85 * p - 0.15 * p * p : 1);
+  }
+  for (const id of boxBorn.keys()) if (!game.boxes.some((b) => b.id === id)) boxBorn.delete(id);
+
+  const tick = tickMs();
+  boxGone = boxGone.filter((g) => t - g.t0 < tick * 1.6);
+  for (const g of boxGone) {
+    const k = Math.min(1, (t - g.t0) / tick);
+    if (g.to) {
+      // Slide onto the target over the tick, then sink into it.
+      const sink = Math.max(0, (t - g.t0) / tick - 1) / 0.6;
+      drawBox(ctx, g.x + (g.to.x - g.x) * k, g.y + (g.to.y - g.y) * k, cell, 1 - 0.7 * sink, 1 - sink);
+    } else {
+      // Knocked away: a quick shrink and fade as the head takes its square.
+      const q = Math.min(1, k * 2);
+      drawBox(ctx, g.x, g.y, cell, 1 - 0.6 * q, 1 - q);
+    }
   }
 }
 
@@ -809,6 +854,22 @@ function afterStep(ev, before, wallsBefore) {
   if (ev === 'eat') { sfx.eat(); updateScore(); }
   if (ev === 'portal') { sfx.portal(); updateScore(); }
   if (game.walls.length > wallsBefore) sfx.wall();
+  if (ev === 'push') sfx.push();
+  if (ev === 'release' || ev === 'bump') {
+    // The box that's gone (in the snapshot, not on the board any more).
+    const now = performance.now();
+    const old = lastSnap?.boxes.find((b) => !game.boxes.some((q) => q.id === b.id));
+    if (old && ev === 'release') {
+      const f = game.foods.find((q) => q.boxed && Math.abs(q.x - old.x) + Math.abs(q.y - old.y) === 1);
+      boxGone.push({ x: old.x, y: old.y, to: f && { x: f.x, y: f.y }, t0: now });
+      // The fruit pops out once the box has reached the target.
+      if (f) foodBorn.set(f.id, now + tickMs() * 0.85);
+      sfx.release();
+    } else if (old) {
+      boxGone.push({ x: old.x, y: old.y, t0: now });
+      sfx.wall();
+    }
+  }
   if (ev === 'die' || ev === 'win') onGameEnd(ev);
 }
 
@@ -1026,6 +1087,7 @@ const ACTIONS = {
       lastSnap = null;
       portalFruits = null;
       eaten = [];
+      boxGone = [];
       wallBorn.clear();
       fitBoard();
     } else if (screen !== 'play') {

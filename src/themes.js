@@ -80,3 +80,36 @@ export const THEME_ICONS = {
   ocean: '<path d="M2 8.5c2.5-2 4.5-2 7 0s4.5 2 7 0 4.5-2 6 0M2 13.5c2.5-2 4.5-2 7 0s4.5 2 7 0 4.5-2 6 0M2 18.5c2.5-2 4.5-2 7 0s4.5 2 7 0 4.5-2 6 0"/>',
   space: '<circle cx="12" cy="12" r="5"/><ellipse cx="12" cy="12" rx="10.5" ry="3.2" transform="rotate(-22 12 12)"/>',
 };
+
+// ---------- HSL helpers ----------
+function toHsl(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = ((n >> 16) & 255) / 255;
+  const g = ((n >> 8) & 255) / 255;
+  const b = (n & 255) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  const h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [h * 60, s, l];
+}
+
+function fromHsl(h, s, l) {
+  const k = (n) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1))));
+  return `#${((1 << 24) | (f(0) << 16) | (f(8) << 8) | f(4)).toString(16).slice(1)}`;
+}
+
+// Accent for markings drawn on the board (box targets, mine fields): the board
+// colour's complementary hue, kept vivid, and dark on light boards / light on
+// dark ones so it always reads. Grey boards get a warm amber.
+export function boardAccent(theme) {
+  const [h, s] = toHsl(theme.margins);
+  const [, , boardL] = toHsl(theme.light);
+  const hue = s < 0.12 ? 38 : (h + 180) % 360;
+  return fromHsl(hue, Math.max(0.65, s), boardL > 0.55 ? 0.36 : 0.66);
+}

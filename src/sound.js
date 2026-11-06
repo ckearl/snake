@@ -62,6 +62,16 @@ export const sfx = {
     if (muted) return;
     tone(150, 0, 0.09, { type: 'triangle', vol: 0.09, to: 70 });
   },
+  // Box mode: a soft scrape for each push, a bright pop when the fruit comes out.
+  push() {
+    if (muted) return;
+    tone(95, 0, 0.07, { type: 'triangle', vol: 0.05, to: 80 });
+  },
+  release() {
+    if (muted) return;
+    tone(392, 0, 0.06, { type: 'triangle', vol: 0.07, to: 784 });
+    tone(1175, 0.06, 0.1, { vol: 0.03 });
+  },
   start() {
     if (muted) return;
     tone(523, 0, 0.07);

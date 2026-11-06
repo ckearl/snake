@@ -19,6 +19,7 @@ Top bar: fullscreen, mute, and close (back to menu).
 - **Winged** — fruits fly freely around the board, bouncing off the edges and your body. Catch one by touching it with your head.
 - **Yin Yang** — every fruit you eat flips the snake: your tail becomes your head and you head off the other way.
 - **Magnet** — fruits fly like Winged, but steer toward your head (your body still blocks them).
+- **Box** — the fruit is shut in a wooden box. Push the box (head first) onto its target square to release the fruit, then eat it as a separate move — you can leave it there for later. Pushing the box into the edge or a wall knocks it to a new spot (the target stays); pushing it into your own body is a death. Always one box and one target (fruit count is ignored). New boxes land at least 3 squares from your head with all 8 squares around them open; you win once there's no room for another box and target.
 
 The shuffle button at the bottom of Settings randomises every row.
 
@@ -60,7 +61,7 @@ your own settings come back. A toast credits the viewer for each action. With `?
 - `src/render.js` — canvas drawing: board, snake, orange/crown sprites, menu scene.
 - `src/sound.js` — WebAudio blips (eat / die / start / win jingle), mute persisted.
 - `src/effects.js` — win fireworks and dizzy stars for the loss bonk.
-- Tests: `test/game.test.js` (rules), `test/modes.test.js` (walls/portals), `test/render.test.js` (smooth movement), `test/actions.test.js` (chat actions), `test/commands.test.js` (commands + IRC parsing).
+- Tests: `test/game.test.js` (rules), `test/modes.test.js` (walls/portals), `test/box.test.js` (box mode), `test/render.test.js` (smooth movement), `test/actions.test.js` (chat actions), `test/commands.test.js` (commands + IRC parsing).
 - `src/main.js` — screens (menu, settings, play), input, game loop, layout.
 - `style.css` — layout and UI styling.
 

@@ -105,3 +105,22 @@ export const MAGNET_ICON = sprite(14, 13, (px) => {
   ], { r: '#D8343F', R: '#F2707A', S: '#F4F4F8', s: '#B8BCC8' }, 0, 1);
   outline(px, '#5A1418');
 });
+
+// Box: a tan wooden crate with a cross brace. Used for the mode icon and on the board.
+export const BOX = sprite(14, 14, (px) => {
+  map(px, [
+    'FFFFFFFFFFFF',
+    'FFFFFFFFFFFf',
+    'FFXttttttXff',
+    'FFtXttttXtff',
+    'FFttXttXttff',
+    'FFtttXXtttff',
+    'FFtttXXtttff',
+    'FFttXttXttff',
+    'FFtXttttXtff',
+    'FFXttttttXff',
+    'Ffffffffffff',
+    'ffffffffffff',
+  ], { F: '#E3BC7E', f: '#B98A4E', t: '#CFA164', X: '#8E5F31' }, 1, 1);
+  outline(px, '#5A3A1C');
+});

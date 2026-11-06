@@ -28,6 +28,8 @@ export const FRUIT_COUNTS = { one: 1, three: 3, five: 5, ten: 10, random: 'rando
 //  yinyang – eating a fruit flips the snake: the tail becomes the head and it
 //            heads off the way the old tail was pointing.
 //  magnet  – fruits fly like winged mode but steer toward the snake's head.
+//  box     – the fruit is shut in a box: push it (head first) onto its target
+//            square to release the fruit, then eat it. Always one box + target.
 export const GAME_MODES = {
   classic: { name: 'Classic' },
   wall: { name: 'Walls' },
@@ -35,6 +37,7 @@ export const GAME_MODES = {
   winged: { name: 'Winged' },
   yinyang: { name: 'Yin Yang' },
   magnet: { name: 'Magnet' },
+  box: { name: 'Box' },
 };
 
 // Modes where fruits move freely. Flying is a per-fruit property (`fly`), so a
@@ -46,6 +49,9 @@ export const WING_SPEED = 2.2; // cells per second
 export const MAGNET_SPEED = 2; // top speed toward the head, cells per second
 export const MAGNET_STEER = 2.5; // how quickly a fruit turns toward the head (per second)
 export const FRUITS_PER_WALL = 2;
+// New boxes / poison fruits / mine fields keep at least this far from the head
+// (Chebyshev distance: squares in any direction, diagonals included).
+export const SPAWN_CLEARANCE = 3;
 
 // Milliseconds per tile at speed 1. Speed is a multiplier on that time:
 // lower = faster (bunny), higher = slower (turtle).
@@ -77,6 +83,9 @@ export function createGame({ cols, rows, fruitCount = 1, mode = 'classic', rng =
     fruitCount,
     foods: [], // { x, y, pair? } – pair links portal twins
     walls: [], // wall mode blocks
+    boxes: [], // box mode: { x, y, id } – pushable, holds a fruit
+    targets: [], // box mode: { x, y, id } – push a box here to release its fruit
+    pushing: false, // box mode: the last step pushed a box
     jumps: [], // portal mode: open portals { from, to, pair } while the body passes through
     nextPair: 1,
     nextId: 1,
@@ -84,11 +93,14 @@ export function createGame({ cols, rows, fruitCount = 1, mode = 'classic', rng =
     score: 0,
     status: 'ready', // ready | running | paused | over | won
   };
-  spawnFoods(state, batchSize(state));
+  if (mode === 'box') spawnPuzzle(state);
+  else spawnFoods(state, batchSize(state));
   return state;
 }
 
 const same = (a, b) => a.x === b.x && a.y === b.y;
+const cheb = (a, b) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+const inBounds = (state, c) => c.x >= 0 && c.y >= 0 && c.x < state.cols && c.y < state.rows;
 export const adjacent = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y) === 1;
 
 export function queueTurn(state, dir) {
@@ -104,7 +116,8 @@ export function queueTurn(state, dir) {
   state.turnQueue.push(dir);
 }
 
-// Advance one tick. Returns 'move' | 'eat' | 'portal' | 'die' | 'win' (or null if not running).
+// Advance one tick. Returns 'move' | 'eat' | 'portal' | 'flip' | 'push' | 'release' |
+// 'bump' | 'die' | 'win' (or null if not running).
 export function step(state) {
   if (state.status !== 'running') return null;
 
@@ -116,8 +129,9 @@ export function step(state) {
   const leavingExit = state.justTeleported;
   state.justTeleported = false;
   state.leftExit = null;
+  state.pushing = false;
 
-  if (next.x < 0 || next.y < 0 || next.x >= state.cols || next.y >= state.rows) return die(state);
+  if (!inBounds(state, next)) return die(state);
   if (state.walls.some((w) => same(w, next))) return die(state);
 
   // Flying fruits are caught continuously (updateFlyers), not by stepping onto a square.
@@ -141,6 +155,15 @@ export function step(state) {
   const body = growing ? state.snake : state.snake.slice(0, -1);
   if (body.some((s) => same(s, newHead))) return die(state);
 
+  // Box mode: walking into a box pushes it one square on.
+  let push = null;
+  const box = state.boxes.find((b) => same(b, next));
+  if (box) {
+    push = pushBox(state, box, { x: next.x + d.x, y: next.y + d.y }, body);
+    if (push === 'die') return die(state);
+    state.pushing = true;
+  }
+
   state.snake.unshift(newHead);
   if (!growing) state.snake.pop();
   else if (!eating) state.grow--;
@@ -151,11 +174,14 @@ export function step(state) {
   if (leavingExit && !eating) state.leftExit = { exit: { x: head.x, y: head.y } };
   pruneJumps(state);
   if (!eating) {
-    if (occupiedCount(state) >= state.cols * state.rows) {
-      state.status = 'won';
-      return 'win';
+    if (occupiedCount(state) >= state.cols * state.rows) return win(state);
+    if (push === 'bump') {
+      const spot = placeBox(state);
+      // A box knocked into a wall that can't find a new spot: the board's full.
+      if (!spot) return win(state);
+      state.boxes.push({ ...spot, id: state.nextId++ });
     }
-    return 'move';
+    return push ?? 'move';
   }
 
   state.score += 1;
@@ -165,11 +191,10 @@ export function step(state) {
   if (state.mode === 'wall' && state.score % FRUITS_PER_WALL === 0) spawnWall(state);
   // Checked after the wall drops: walls shrink the board, so a wall taking the
   // last open square means there's nothing left to fill — that's a win.
-  if (occupiedCount(state) >= state.cols * state.rows) {
-    state.status = 'won';
-    return 'win';
-  }
-  if (!eatenFood.bonus) refill(state);
+  if (occupiedCount(state) >= state.cols * state.rows) return win(state);
+  // Modes that need room for their next thing (a box and its target) are won
+  // once there isn't any.
+  if (!eatenFood.bonus && !refill(state)) return win(state);
   if (state.mode === 'yinyang') {
     flip(state);
     return 'flip';
@@ -190,12 +215,110 @@ export function flip(state) {
 
 // Top fruits back up after one is eaten: replace it, or drop a new random batch.
 // Bonus fruits (dropped in from chat) don't count toward the fruit count.
+// Returns false when the mode couldn't place what it needs (that's a win).
 function refill(state) {
+  if (state.mode === 'box') {
+    if (!state.boxes.length && !state.foods.some((f) => f.boxed)) return spawnPuzzle(state);
+    return true;
+  }
   if (state.fruitCount === 'random') {
     if (!state.foods.some((f) => !f.bonus)) spawnFoods(state, batchSize(state));
   } else {
     spawnFoods(state, 1);
   }
+  return true;
+}
+
+// ---------- box mode ----------
+// Push `box` onto `dest` (the square beyond it). `body` is the snake as it will
+// be after this move, minus the new head. Returns:
+//  'push'    – the box slid onto dest
+//  'release' – dest was a target: box and target are gone, the fruit sits on dest
+//  'bump'    – dest is off the board / a wall / another box / a fruit: the box
+//              respawns somewhere else (or vanishes if there's no room)
+//  'die'     – dest is part of the snake
+function pushBox(state, box, dest, body) {
+  if (body.some((s) => same(s, dest))) return 'die';
+  const blocked = !inBounds(state, dest)
+    || state.walls.some((w) => same(w, dest))
+    || state.boxes.some((b) => b !== box && same(b, dest))
+    || state.foods.some((f) => !f.fly && same(f, dest));
+  if (blocked) {
+    // Respawned by step() once the head has moved onto the old box square.
+    state.boxes = state.boxes.filter((b) => b !== box);
+    return 'bump';
+  }
+  const target = state.targets.find((t) => same(t, dest));
+  if (target) {
+    state.boxes = state.boxes.filter((b) => b !== box);
+    state.targets = state.targets.filter((t) => t !== target);
+    state.foods.push({ x: dest.x, y: dest.y, id: state.nextId++, boxed: true });
+    return 'release';
+  }
+  box.x = dest.x;
+  box.y = dest.y;
+  return 'push';
+}
+
+// Squares a new box could go on: off the edge, at least SPAWN_CLEARANCE from the
+// head, and with all 8 squares around it open (so the snake can get round it to
+// push it any way).
+export function placeBox(state) {
+  const { cols, rows } = state;
+  const taken = takenCells(state);
+  const h = state.snake[0];
+  const ok = [];
+  for (let y = 1; y < rows - 1; y++) {
+    for (let x = 1; x < cols - 1; x++) {
+      if (h && cheb(h, { x, y }) < SPAWN_CLEARANCE) continue;
+      let clear = true;
+      for (let dy = -1; dy <= 1 && clear; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (taken.has((y + dy) * cols + x + dx)) { clear = false; break; }
+        }
+      }
+      if (clear) ok.push({ x, y });
+    }
+  }
+  return ok.length ? ok[Math.floor(state.rng() * ok.length)] : null;
+}
+
+// A target on any open square at least 2 away from its box.
+function placeTarget(state, box) {
+  const taken = takenCells(state);
+  const ok = [];
+  for (let y = 0; y < state.rows; y++) {
+    for (let x = 0; x < state.cols; x++) {
+      if (!taken.has(y * state.cols + x) && cheb(box, { x, y }) >= 2) ok.push({ x, y });
+    }
+  }
+  return ok.length ? ok[Math.floor(state.rng() * ok.length)] : null;
+}
+
+// Drop a new box and its target. Returns false if there's no room for both.
+export function spawnPuzzle(state) {
+  const box = placeBox(state);
+  if (!box) return false;
+  box.id = state.nextId++;
+  state.boxes.push(box);
+  const target = placeTarget(state, box);
+  if (!target) {
+    state.boxes.pop();
+    return false;
+  }
+  target.id = state.nextId++;
+  state.targets.push(target);
+  return true;
+}
+
+// Grid squares holding something solid: snake, grid fruits, walls, boxes, targets.
+function takenCells(state) {
+  const c = state.cols;
+  const cells = [
+    ...state.snake, ...state.walls, ...state.targets, ...state.boxes,
+    ...state.foods.filter((f) => !f.fly),
+  ];
+  return new Set(cells.map((s) => s.y * c + s.x));
 }
 
 // ---------- flying fruits ----------
@@ -207,7 +330,7 @@ export function updateFlyers(state, dt, head = null) {
   if (state.status !== 'running' || !state.foods.some((f) => f.fly)) return [];
   const h = head ?? { x: state.snake[0].x + 0.5, y: state.snake[0].y + 0.5 };
   const r = FRUIT_RADIUS;
-  const obstacles = [...state.snake.slice(1), ...state.walls];
+  const obstacles = [...state.snake.slice(1), ...state.walls, ...state.boxes];
 
   for (const f of state.foods) {
     if (!f.fly) continue;
@@ -290,6 +413,9 @@ export function snapshot(state) {
     turnQueue: [...state.turnQueue],
     foods: state.foods.map((f) => ({ ...f })),
     walls: state.walls.map((w) => ({ ...w })),
+    boxes: state.boxes.map((b) => ({ ...b })),
+    targets: state.targets.map((t) => ({ ...t })),
+    pushing: state.pushing,
     jumps: state.jumps.map((j) => ({ ...j, from: { ...j.from }, to: { ...j.to } })),
     grow: state.grow,
     score: state.score,
@@ -305,7 +431,7 @@ export function snapshot(state) {
 // from just before that step, `lastEvent` what the step returned. Returns the new
 // step's event, or null if a late turn isn't allowed here.
 export function lateTurn(state, snap, lastEvent, dir) {
-  if (!snap || lastEvent !== 'move' || state.status !== 'running') return null;
+  if (!snap || (lastEvent !== 'move' && lastEvent !== 'push') || state.status !== 'running') return null;
   if (snap.turnQueue.length) return null; // that move already used a queued turn
   if (!DIRECTIONS[dir] || dir === snap.dir || dir === OPPOSITE[snap.dir]) return null;
   Object.assign(state, snapshot(snap)); // copy so the snapshot stays reusable
@@ -335,6 +461,11 @@ export function redirectExit(state, dir) {
 function die(state) {
   state.status = 'over';
   return 'die';
+}
+
+function win(state) {
+  state.status = 'won';
+  return 'win';
 }
 
 // Squares filled by the snake or walls. The board is won when this covers every square.
@@ -434,6 +565,8 @@ export function resizeBoard(state, cols, rows) {
   foods = foods.filter((f) => !f.pair || foods.some((o) => o !== f && o.pair === f.pair));
   state.foods = foods;
   state.walls = state.walls.map(move).filter(inside);
+  state.boxes = state.boxes.map(move).filter(inside);
+  state.targets = state.targets.map(move).filter(inside);
   state.jumps = state.jumps
     .map((j) => ({ ...j, from: move(j.from), to: move(j.to) }))
     .filter((j) => inside(j.from) && inside(j.to));
@@ -445,6 +578,15 @@ export function resizeBoard(state, cols, rows) {
   // Walls that would now box the snake in are knocked down.
   while (state.walls.length && !keepsBoardOpen(state)) {
     state.walls.splice(Math.floor(state.rng() * state.walls.length), 1);
+  }
+  if (state.mode === 'box') {
+    // Lost the box or its target off the edge: start a fresh one.
+    if ((!state.boxes.length || !state.targets.length) && !state.foods.some((f) => f.boxed)) {
+      state.boxes = [];
+      state.targets = [];
+      spawnPuzzle(state);
+    }
+    return true;
   }
   // Top the fruit back up to the normal count.
   const regular = state.foods.filter((f) => !f.bonus);
@@ -459,7 +601,7 @@ export function resizeBoard(state, cols, rows) {
 
 function freeCells(state, extraBlocked = []) {
   const occupied = new Set(
-    [...state.snake, ...state.foods, ...state.walls, ...extraBlocked]
+    [...state.snake, ...state.foods, ...state.walls, ...state.boxes, ...state.targets, ...extraBlocked]
       .map((s) => Math.floor(s.y) * state.cols + Math.floor(s.x)),
   );
   const free = [];
