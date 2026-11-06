@@ -1,5 +1,5 @@
 // Canvas drawing: board, snake, and pixel sprites. No game rules here.
-import { SKINS, DEFAULT_SKIN, skinColor, shade } from './themes.js';
+import { SKINS, DEFAULT_SKIN, skinColor, shade, mix } from './themes.js';
 import { FRUITS, DEFAULT_FRUIT } from './fruits.js';
 import { BOX } from './critters.js';
 
@@ -82,8 +82,66 @@ const CROWN = fromMap(
 );
 
 // Draw a fruit sprite centred in a size×size box, keeping its aspect ratio.
+// opts.poison draws the poisoned version (see poisonSprite).
 export function drawFruit(ctx, kind, x, y, size, opts = {}) {
-  drawSprite(ctx, (FRUITS[kind] ?? FRUITS[DEFAULT_FRUIT]).sprite, x, y, size, opts);
+  const sprite = opts.poison ? poisonSprite(kind) : (FRUITS[kind] ?? FRUITS[DEFAULT_FRUIT]).sprite;
+  drawSprite(ctx, sprite, x, y, size, opts);
+}
+
+// Poison fruit: the same fruit, recoloured to a sickly purple by brightness
+// (so its shading survives), with green leaves/stems turned a toxic lime.
+// Fruits that are purple already (grapes, eggplant) go toxic green instead.
+const POISON_RAMP = ['#2A1236', '#4E2266', '#7A3A9A', '#A866C8', '#D6A8EC'];
+const TOXIC_RAMP = ['#1C3A0A', '#2F6A12', '#4FA21E', '#86D83A', '#C8F58A'];
+const poisonCache = new Map();
+const rgbOf = (c) => {
+  const n = parseInt(c.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+};
+const isGreen = ([r, g, b]) => g > r * 1.15 && g > b * 1.15;
+
+// Is this fruit mostly purple (so a poisoned fruit could be mistaken for it)?
+export function isPurpleFruit(kind) {
+  const px = (FRUITS[kind]?.sprite ?? []).flat().filter(Boolean).map(rgbOf).filter((c) => !isGreen(c));
+  if (!px.length) return false;
+  const [r, g, b] = [0, 1, 2].map((i) => px.reduce((a, c) => a + c[i], 0) / px.length);
+  return b > g * 1.2 && r > g * 1.1 && b > r * 0.55;
+}
+function poisonSprite(kind) {
+  if (!FRUITS[kind]) kind = DEFAULT_FRUIT;
+  if (poisonCache.has(kind)) return poisonCache.get(kind);
+  // Green fruits (kiwi, broccoli…) go all purple; on the rest the leaves turn lime.
+  const filled = FRUITS[kind].sprite.flat().filter(Boolean);
+  const leafy = filled.filter((c) => isGreen(rgbOf(c))).length < filled.length * 0.35;
+  const purple = isPurpleFruit(kind);
+  const ramp = purple ? TOXIC_RAMP : POISON_RAMP;
+  const sprite = FRUITS[kind].sprite.map((row) => row.map((c) => {
+    if (!c) return c;
+    const [r, g, b] = rgbOf(c);
+    const lum = (0.3 * r + 0.59 * g + 0.11 * b) / 255;
+    if (leafy && isGreen([r, g, b])) return purple ? mix('#C77DEB', '#5A1E7A', 1 - lum) : mix('#9BE23A', '#3E7A12', 1 - lum);
+    const x = Math.min(0.999, lum * 1.1) * (ramp.length - 1);
+    const i = Math.floor(x);
+    return mix(ramp[i], ramp[i + 1], x - i);
+  }));
+  poisonCache.set(kind, sprite);
+  return sprite;
+}
+
+// Little toxic bubbles rising off a poison fruit centred at (cx, cy) px.
+export function drawPoisonBubbles(ctx, cx, cy, size, ms, seed = 0) {
+  const u = Math.max(1, Math.round(size / 16));
+  for (let k = 0; k < 2; k++) {
+    const p = ((ms + seed * 337 + k * 700) % 1400) / 1400;
+    const x = Math.round(cx + (k ? 0.22 : -0.16) * size + Math.sin(p * 6 + k) * u);
+    const y = Math.round(cy - size * 0.35 - p * size * 0.45);
+    ctx.globalAlpha = p < 0.7 ? 0.9 : (1 - p) / 0.3 * 0.9;
+    ctx.fillStyle = '#9BE23A';
+    ctx.fillRect(x, y, u * 2, u * 2);
+    ctx.fillStyle = '#E4FFB8';
+    ctx.fillRect(x, y, u, u);
+  }
+  ctx.globalAlpha = 1;
 }
 
 // Draw any sprite centred in a size×size box, keeping its aspect ratio.

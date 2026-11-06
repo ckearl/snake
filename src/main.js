@@ -5,7 +5,7 @@ import {
 } from './game.js';
 import {
   sizeCanvas, drawBoard, drawSnake, drawSnakePath, interpolateSnake, snakePoints, drawWall, drawWings, drawFruit, drawSprite, drawCrown, drawScene, setBoardColors, setSnakeSkin,
-  drawBox, drawTarget,
+  drawBox, drawTarget, drawPoisonBubbles, isPurpleFruit,
 } from './render.js';
 import { THEMES, SKINS, DEFAULT_THEME, DEFAULT_SKIN, THEME_ICONS, shade, boardAccent } from './themes.js';
 import { FRUITS, DEFAULT_FRUIT, BASKET } from './fruits.js';
@@ -233,7 +233,11 @@ const randomFruit = () => {
 function fruitKind(f) {
   if (f.pair) return pairKind(f.pair);
   if (fruitId() !== MIXED) return fruitId();
-  if (!f.kind) f.kind = randomFruit();
+  if (!f.kind) {
+    // Poison mode: regular fruit is never a purple kind, so it can't be mistaken for poison.
+    const ids = Object.keys(FRUITS).filter((k) => !(game?.mode === 'poison' && !f.poison && isPurpleFruit(k)));
+    f.kind = ids[Math.floor(Math.random() * ids.length)];
+  }
   return f.kind;
 }
 
@@ -359,6 +363,12 @@ function paintModeIcon(c) {
   const ctx = sizeCanvas(c, 45, 45);
   if (MODE_SPRITES[id]) {
     drawSprite(ctx, MODE_SPRITES[id], 2, 2, 41);
+    return;
+  }
+  if (id === 'poison') {
+    // A poisoned fruit, bubbling.
+    drawFruit(ctx, iconFruit(0), 6, 9, 33, { poison: true });
+    drawPoisonBubbles(ctx, 22.5, 25, 33, 500);
     return;
   }
   if (id === 'winged') {
@@ -698,7 +708,8 @@ function drawGame(t) {
     const cx = flying ? f.x * cell : (f.x + 0.5) * cell;
     const cy = flying ? f.y * cell : (f.y + 0.5) * cell;
     if (f.fly === 'winged') drawWings(ctx, cx, cy, size, Math.floor((t + (f.id ?? 0) * 97) / 130) % 2 === 0);
-    drawFruit(ctx, fruitKind(f), cx - size / 2, cy - size / 2 - cell * 0.03, size, { shadow: !flying });
+    drawFruit(ctx, fruitKind(f), cx - size / 2, cy - size / 2 - cell * 0.03, size, { shadow: !flying, poison: f.poison });
+    if (f.poison) drawPoisonBubbles(ctx, cx, cy, size, t, f.id ?? 0);
   }
   for (const key of foodBorn.keys()) if (!onBoard.has(key)) foodBorn.delete(key);
 
@@ -717,7 +728,7 @@ function drawGame(t) {
     const k = (t - e.t0) / tickMs();
     if (k >= 1) continue;
     const size = cell * 0.9 * (1 - k);
-    drawFruit(ctx, e.kind, e.cx * cell - size / 2, e.cy * cell - size / 2, size);
+    drawFruit(ctx, e.kind, e.cx * cell - size / 2, e.cy * cell - size / 2, size, { poison: e.poison });
   }
   eaten = eaten.filter((e) => t - e.t0 < tickMs());
 
@@ -729,6 +740,11 @@ function drawGame(t) {
     dir: game.dir, tongue: live && tongueOut(t) && !mouth, ms: t, jumps: game.jumps, mouth,
     strain: moving && game.pushing,
   };
+  if (game.poison > 0 && game.status !== 'over') {
+    // Poisoned: grey and dizzy. Flickers back to normal over the last two moves.
+    const ending = game.poison <= 2 && Math.floor(t / 110) % 2;
+    if (!ending) Object.assign(opts, { skin: SKINS.gray, eyes: 'dizzy', tongue: false });
+  }
 
   if (game.status === 'over' && endFx?.type === 'lose') {
     drawBonk(ctx, t - endFx.t0, opts);
@@ -827,7 +843,15 @@ function tryLateTurn(dir) {
 
 // Sounds, score, and animations for whatever a step just did.
 function afterStep(ev, before, wallsBefore) {
-  if (ev === 'eat' || ev === 'flip' || ev === 'portal' || ev === 'win') mouthT0 = performance.now();
+  if (ev === 'eat' || ev === 'flip' || ev === 'portal' || ev === 'win' || ev === 'poison') mouthT0 = performance.now();
+  if (ev === 'poison') {
+    const at = game.snake[0];
+    const f = before.find((q) => q.x === at.x && q.y === at.y);
+    eaten.push({ cx: at.x + 0.5, cy: at.y + 0.5, kind: f ? fruitKind(f) : fruitId(), poison: true, t0: performance.now() });
+    sfx.poison();
+  } else if (lastSnap?.poison > 0 && game.poison === 0 && game.status === 'running') {
+    sfx.cure();
+  }
   if (ev === 'flip') {
     // Yin Yang: the fruit was eaten where the head was, which is now the tail end.
     const at = game.snake[game.snake.length - 1];

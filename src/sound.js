@@ -72,6 +72,17 @@ export const sfx = {
     tone(392, 0, 0.06, { type: 'triangle', vol: 0.07, to: 784 });
     tone(1175, 0.06, 0.1, { vol: 0.03 });
   },
+  // Poison: a queasy, wobbling slide down. Cure: a little "phew" back up.
+  poison() {
+    if (muted) return;
+    tone(520, 0, 0.12, { type: 'triangle', vol: 0.07, to: 300 });
+    tone(340, 0.12, 0.18, { type: 'triangle', vol: 0.06, to: 160 });
+  },
+  cure() {
+    if (muted) return;
+    tone(440, 0, 0.07, { type: 'triangle', vol: 0.05 });
+    tone(660, 0.07, 0.1, { type: 'triangle', vol: 0.05 });
+  },
   start() {
     if (muted) return;
     tone(523, 0, 0.07);

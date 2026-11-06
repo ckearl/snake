@@ -30,6 +30,9 @@ export const FRUIT_COUNTS = { one: 1, three: 3, five: 5, ten: 10, random: 'rando
 //  magnet  – fruits fly like winged mode but steer toward the snake's head.
 //  box     – the fruit is shut in a box: push it (head first) onto its target
 //            square to release the fruit, then eat it. Always one box + target.
+//  poison  – every regular fruit comes with a poison one. Eating poison hands
+//            the snake over to a random (but never suicidal) wander for as many
+//            moves as it is long.
 export const GAME_MODES = {
   classic: { name: 'Classic' },
   wall: { name: 'Walls' },
@@ -38,6 +41,7 @@ export const GAME_MODES = {
   yinyang: { name: 'Yin Yang' },
   magnet: { name: 'Magnet' },
   box: { name: 'Box' },
+  poison: { name: 'Poison' },
 };
 
 // Modes where fruits move freely. Flying is a per-fruit property (`fly`), so a
@@ -86,6 +90,7 @@ export function createGame({ cols, rows, fruitCount = 1, mode = 'classic', rng =
     boxes: [], // box mode: { x, y, id } – pushable, holds a fruit
     targets: [], // box mode: { x, y, id } – push a box here to release its fruit
     pushing: false, // box mode: the last step pushed a box
+    poison: 0, // poison mode: moves left before the player gets control back
     jumps: [], // portal mode: open portals { from, to, pair } while the body passes through
     nextPair: 1,
     nextId: 1,
@@ -106,6 +111,7 @@ export const adjacent = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y) === 
 export function queueTurn(state, dir) {
   if (!DIRECTIONS[dir]) return;
   if (state.status === 'over' || state.status === 'won') return;
+  if (state.poison > 0) return; // the poison is steering
   // Compare against the last queued direction so quick double-taps
   // (e.g. up then left) work without letting the snake reverse into itself.
   const last = state.turnQueue.length
@@ -121,7 +127,13 @@ export function queueTurn(state, dir) {
 export function step(state) {
   if (state.status !== 'running') return null;
 
-  if (state.turnQueue.length) state.dir = state.turnQueue.shift();
+  const poisoned = state.poison > 0;
+  if (poisoned) {
+    state.turnQueue = [];
+    state.dir = poisonDir(state);
+  } else if (state.turnQueue.length) {
+    state.dir = state.turnQueue.shift();
+  }
   const d = DIRECTIONS[state.dir];
   const head = state.snake[0];
   const next = { x: head.x + d.x, y: head.y + d.y };
@@ -137,7 +149,9 @@ export function step(state) {
   // Flying fruits are caught continuously (updateFlyers), not by stepping onto a square.
   const eatIdx = state.foods.findIndex((f) => !f.fly && same(f, next));
   const eating = eatIdx !== -1;
-  const growing = eating || state.grow > 0;
+  // Poison fruit doesn't make you longer.
+  const toxic = eating && !!state.foods[eatIdx].poison;
+  const growing = (eating && !toxic) || state.grow > 0;
 
   // Portal: the head comes out of the eaten fruit's twin instead.
   let newHead = next;
@@ -166,7 +180,8 @@ export function step(state) {
 
   state.snake.unshift(newHead);
   if (!growing) state.snake.pop();
-  else if (!eating) state.grow--;
+  else if (!eating || toxic) state.grow--;
+  if (poisoned) state.poison--;
   if (jump) {
     state.jumps.push(jump);
     state.justTeleported = true;
@@ -184,9 +199,16 @@ export function step(state) {
     return push ?? 'move';
   }
 
-  state.score += 1;
   const eatenFood = state.foods[eatIdx];
   state.foods = state.foods.filter((f) => f !== eatenFood && !(jump && f.pair === eatenFood.pair));
+  if (toxic) {
+    // Poison: no point, no growth; the snake wanders for as long as it is long.
+    state.poison = state.snake.length;
+    state.turnQueue = [];
+    if (!refill(state, eatenFood)) return win(state);
+    return 'poison';
+  }
+  state.score += 1;
 
   if (state.mode === 'wall' && state.score % FRUITS_PER_WALL === 0) spawnWall(state);
   // Checked after the wall drops: walls shrink the board, so a wall taking the
@@ -194,7 +216,7 @@ export function step(state) {
   if (occupiedCount(state) >= state.cols * state.rows) return win(state);
   // Modes that need room for their next thing (a box and its target) are won
   // once there isn't any.
-  if (!eatenFood.bonus && !refill(state)) return win(state);
+  if (!eatenFood.bonus && !refill(state, eatenFood)) return win(state);
   if (state.mode === 'yinyang') {
     flip(state);
     return 'flip';
@@ -216,10 +238,19 @@ export function flip(state) {
 // Top fruits back up after one is eaten: replace it, or drop a new random batch.
 // Bonus fruits (dropped in from chat) don't count toward the fruit count.
 // Returns false when the mode couldn't place what it needs (that's a win).
-function refill(state) {
+function refill(state, eaten = null) {
   if (state.mode === 'box') {
     if (!state.boxes.length && !state.foods.some((f) => f.boxed)) return spawnPuzzle(state);
     return true;
+  }
+  if (state.mode === 'poison') {
+    if (state.fruitCount === 'random') {
+      // A fresh batch once every regular fruit is gone (leftover poison is cleared).
+      if (state.foods.some((f) => !f.bonus && !f.poison)) return true;
+      state.foods = state.foods.filter((f) => !f.poison);
+      return spawnFoods(state, batchSize(state));
+    }
+    return !!spawnPoisonFruit(state, !!eaten?.poison);
   }
   if (state.fruitCount === 'random') {
     if (!state.foods.some((f) => !f.bonus)) spawnFoods(state, batchSize(state));
@@ -416,6 +447,7 @@ export function snapshot(state) {
     boxes: state.boxes.map((b) => ({ ...b })),
     targets: state.targets.map((t) => ({ ...t })),
     pushing: state.pushing,
+    poison: state.poison,
     jumps: state.jumps.map((j) => ({ ...j, from: { ...j.from }, to: { ...j.to } })),
     grow: state.grow,
     score: state.score,
@@ -433,6 +465,7 @@ export function snapshot(state) {
 export function lateTurn(state, snap, lastEvent, dir) {
   if (!snap || (lastEvent !== 'move' && lastEvent !== 'push') || state.status !== 'running') return null;
   if (snap.turnQueue.length) return null; // that move already used a queued turn
+  if (snap.poison > 0) return null; // the poison chose that move
   if (!DIRECTIONS[dir] || dir === snap.dir || dir === OPPOSITE[snap.dir]) return null;
   Object.assign(state, snapshot(snap)); // copy so the snapshot stays reusable
   state.turnQueue = [dir];
@@ -489,17 +522,20 @@ function batchSize(state) {
   return RANDOM_MIN + Math.floor(state.rng() * (RANDOM_MAX - RANDOM_MIN + 1));
 }
 
-// Add up to n fruits (n portal pairs in portal mode) on free cells.
+// Add up to n fruits (n portal pairs in portal mode, n regular + n poison in
+// poison mode) on free cells. Returns false if it ran out of room.
 export function spawnFoods(state, n) {
   for (let i = 0; i < n; i++) {
-    if (state.mode === 'portal') {
+    if (state.mode === 'poison') {
+      if (!spawnPoisonFruit(state, false) || !spawnPoisonFruit(state, true)) return false;
+    } else if (state.mode === 'portal') {
       const a = placeFood(state);
-      if (!a) break;
+      if (!a) return false;
       state.foods.push(a);
       const b = placeFood(state);
       if (!b) {
         state.foods.pop(); // a portal needs both ends
-        break;
+        return false;
       }
       a.pair = b.pair = state.nextPair++;
       a.id = state.nextId++;
@@ -507,12 +543,171 @@ export function spawnFoods(state, n) {
       state.foods.push(b);
     } else {
       const f = placeFood(state);
-      if (!f) break;
+      if (!f) return false;
       f.id = state.nextId++;
       if (FLYING_MODES.has(state.mode)) makeFlyer(state, f, state.mode);
       state.foods.push(f);
     }
   }
+  return true;
+}
+
+// ---------- poison mode ----------
+// One regular or poison fruit on a free square at least SPAWN_CLEARANCE from the head.
+export function spawnPoisonFruit(state, poison) {
+  const taken = takenCells(state);
+  const h = state.snake[0];
+  const ok = [];
+  for (let y = 0; y < state.rows; y++) {
+    for (let x = 0; x < state.cols; x++) {
+      if (!taken.has(y * state.cols + x) && (!h || cheb(h, { x, y }) >= SPAWN_CLEARANCE)) ok.push({ x, y });
+    }
+  }
+  if (!ok.length) return null;
+  const f = ok[Math.floor(state.rng() * ok.length)];
+  f.id = state.nextId++;
+  if (poison) f.poison = true;
+  state.foods.push(f);
+  return f;
+}
+
+// Poisoned steering: carry on straight half the time, turn left or right a
+// quarter each — but only among moves that are safe. A move is safe if it hits
+// nothing and leaves the head able to reach its own tail (or at least as much
+// open room as the snake is long), so the wander can't paint itself into a
+// corner. Poison fruit is only stepped on if nothing else is safe.
+export function poisonDir(state) {
+  const dir = state.dir;
+  const options = [
+    [dir, 0.5],
+    ...Object.keys(DIRECTIONS)
+      .filter((k) => k !== dir && k !== OPPOSITE[dir])
+      .map((k) => [k, 0.25]),
+  ];
+  let bestTier = -1;
+  let pool = [];
+  for (const [k, w] of options) {
+    const tier = moveSafety(state, k);
+    if (tier > bestTier) {
+      bestTier = tier;
+      pool = [];
+    }
+    if (tier === bestTier) pool.push([k, w]);
+  }
+  if (bestTier <= 0) return dir; // nowhere safe: carry on (into whatever it is)
+  const total = pool.reduce((a, [, w]) => a + w, 0);
+  let r = state.rng() * total;
+  for (const [k, w] of pool) {
+    if ((r -= w) < 0) return k;
+  }
+  return pool[pool.length - 1][0];
+}
+
+// Higher is safer. 0 = fatal. Otherwise, from best to worst: the snake can
+// still chase its own tail after this; it at least has room for its length;
+// it's trapped (but not dead yet). Within each, stepping on poison fruit ranks
+// a notch lower.
+function moveSafety(state, k) {
+  const sim = { snake: state.snake, grow: state.grow };
+  const fruit = new Map(state.foods.filter((f) => !f.fly).map((f) => [f.y * state.cols + f.x, f]));
+  const blocked = wallGrid(state);
+  const next = simMove(state, sim, k, blocked, fruit);
+  if (!next) return 0;
+  let level = 1;
+  if (lookAhead(state, next, LOOKAHEAD, blocked, fruit, TAIL, { n: LOOKAHEAD_BUDGET })) level = 3;
+  else if (lookAhead(state, next, LOOKAHEAD, blocked, fruit, ROOM, { n: LOOKAHEAD_BUDGET })) level = 2;
+  const h = next.snake[0];
+  return level * 2 + (fruit.get(h.y * state.cols + h.x)?.poison ? 0 : 1);
+}
+
+// roomy() results
+const ROOM = 1; // as many open squares as the snake is long
+const TAIL = 2; // can catch up with its own retreating tail
+
+const LOOKAHEAD = 10; // moves
+const LOOKAHEAD_BUDGET = 300; // positions checked per candidate move
+
+function wallGrid(state) {
+  const g = new Uint8Array(state.cols * state.rows);
+  for (const w of state.walls) g[w.y * state.cols + w.x] = 1;
+  return g;
+}
+
+// One simulated move of a { snake, grow } in direction k (fruit eaten along the
+// way makes it grow; nothing respawns). Returns the new sim, or null if it dies.
+function simMove(state, sim, k, blocked, fruit) {
+  const d = DIRECTIONS[k];
+  const h = sim.snake[0];
+  const next = { x: h.x + d.x, y: h.y + d.y };
+  if (!inBounds(state, next) || blocked[next.y * state.cols + next.x]) return null;
+  const f = fruit.get(next.y * state.cols + next.x);
+  const eats = f && !f.poison;
+  const growing = eats || sim.grow > 0;
+  const body = growing ? sim.snake : sim.snake.slice(0, -1);
+  if (body.some((s) => same(s, next))) return null;
+  return { snake: [next, ...body], grow: eats ? sim.grow : Math.max(0, sim.grow - 1) };
+}
+
+// Is there some way to keep going for `depth` more moves and end up at least
+// `need` (ROOM or TAIL) safe? Ignores fruit already eaten in this line (close enough).
+function lookAhead(state, sim, depth, blocked, fruit, need, budget) {
+  const r = roomy(state, sim, blocked, fruit);
+  if (r >= need) return true;
+  if (depth === 0 || budget.n <= 0 || r === 0) return false;
+  budget.n--;
+  const h = sim.snake[0];
+  const n = sim.snake[1];
+  for (const k of Object.keys(DIRECTIONS)) {
+    const d = DIRECTIONS[k];
+    if (n && h.x + d.x === n.x && h.y + d.y === n.y) continue;
+    const next = simMove(state, sim, k, blocked, fruit);
+    if (next && lookAhead(state, next, depth - 1, blocked, fruit, need, budget)) return true;
+  }
+  return false;
+}
+
+// Time-aware flood fill from the head: a body square counts as open once the
+// tail will have moved off it by the time the head could get there. TAIL if
+// the head can reach a square the body is leaving (it can then chase its own
+// tail forever), else ROOM if it has at least as many open squares as the
+// snake is long, else 0. Fruit eaten on the way there makes the snake longer,
+// so the tail is that much later.
+function roomy(state, sim, blocked, fruit) {
+  const { cols, rows } = state;
+  const { snake, grow } = sim;
+  const n = snake.length;
+  const freeAt = new Int32Array(cols * rows);
+  // Segment i (0 = head) leaves its square after n - i moves (later while still growing).
+  for (let i = 1; i < n; i++) freeAt[snake[i].y * cols + snake[i].x] = n - i + grow;
+  const start = snake[0].y * cols + snake[0].x;
+  const dist = new Int32Array(cols * rows).fill(-1);
+  const ate = new Int32Array(cols * rows); // regular fruit eaten along the way
+  dist[start] = 0;
+  const queue = [start];
+  let area = 0;
+  for (let q = 0; q < queue.length; q++) {
+    const i = queue[q];
+    const x = i % cols;
+    const y = (i - x) / cols;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+      const j = ny * cols + nx;
+      if (blocked[j] || dist[j] !== -1) continue;
+      const t = dist[i] + 1;
+      if (freeAt[j]) {
+        if (t < freeAt[j] + ate[i]) continue;
+        return TAIL; // caught up with the retreating tail
+      }
+      dist[j] = t;
+      const f = fruit.get(j);
+      ate[j] = ate[i] + (f && !f.poison ? 1 : 0);
+      area++;
+      queue.push(j);
+    }
+  }
+  return area >= n ? ROOM : 0;
 }
 
 // Turn a fruit placed on a square into a flying one ('winged' or 'magnet'):
@@ -585,6 +780,15 @@ export function resizeBoard(state, cols, rows) {
       state.boxes = [];
       state.targets = [];
       spawnPuzzle(state);
+    }
+    return true;
+  }
+  if (state.mode === 'poison') {
+    // Top each kind back up to the count.
+    const n = state.fruitCount === 'random' ? 1 : state.fruitCount;
+    for (const poison of [false, true]) {
+      const have = state.foods.filter((f) => !f.bonus && !!f.poison === poison).length;
+      for (let i = have; i < n; i++) spawnPoisonFruit(state, poison);
     }
     return true;
   }
