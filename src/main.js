@@ -11,7 +11,7 @@ import {
 import { THEMES, SKINS, DEFAULT_THEME, DEFAULT_SKIN, shade, mix, boardAccent } from './themes.js';
 import { FRUITS, DEFAULT_FRUIT, BASKET } from './fruits.js';
 import {
-  BUNNY, TURTLE, WALL_ICON, PORTAL_ICON, MAGNET_ICON, BOX, MINES_ICON, THEME_SPRITES,
+  BUNNY, TURTLE, WALL_ICON, PORTAL_ICON, MAGNET_ICON, BOX, MINES_ICON, BLENDER_ICON, THEME_SPRITES,
 } from './critters.js';
 import {
   makeFireworks, drawFireworks, drawDizzyStars, makeConfetti, drawConfetti, CONFETTI_MS, makeBlast, drawBlast,
@@ -61,6 +61,7 @@ const el = {
   fullscreen: $('btn-fullscreen'),
   mute: $('btn-mute'),
   timer: $('timer'),
+  blender: $('blender'),
 };
 
 // ---------- persistence ----------
@@ -130,7 +131,7 @@ let timerText = '';
 
 function newGame() {
   const { cols, rows } = BOARD_SIZES[boardSizeKey()];
-  game = createGame({ cols, rows, fruitCount: FRUIT_COUNTS[active.count], mode: active.mode });
+  game = createGame({ cols, rows, fruitCount: FRUIT_COUNTS[active.count], mode: activeModes() });
   startBest = getBest();
   recordShown = false;
   foodBorn.clear();
@@ -162,6 +163,7 @@ function showScreen(name) {
   clearTimeout(deathTimer);
   el.menu.hidden = name !== 'menu';
   el.settings.hidden = name !== 'settings';
+  if (name !== 'settings') el.blender.hidden = true;
   el.stream.hidden = name !== 'stream';
   if (name === 'menu') {
     if (roundPlayed) clearChatOverrides();
@@ -239,10 +241,13 @@ const SURPRISE = 'surprise';
 const SURPRISE_OPT = { name: 'Random each round' };
 // "mixed" fruit: every fruit on the board is a random kind.
 const MIXED = 'mixed';
+// The blender tile at the very end of the game mode row: several modes at once.
+const BLEND = 'blend';
+const BLEND_OPT = { name: 'Blender' };
 
 const OPTIONS = {
   fruit: { ...FRUITS, [MIXED]: { name: 'Mixed fruit' } },
-  mode: { ...GAME_MODES, [SURPRISE]: SURPRISE_OPT },
+  mode: { ...GAME_MODES, [SURPRISE]: SURPRISE_OPT, [BLEND]: BLEND_OPT },
   count: { ...FRUIT_COUNTS, [SURPRISE]: SURPRISE_OPT },
   speed: SPEEDS,
   size: BOARD_SIZES,
@@ -261,6 +266,14 @@ const prefs = {
   theme: pick('snake.theme', OPTIONS.theme, DEFAULT_THEME),
 };
 
+// The modes in the blend (saved as their key, e.g. "box+key"). Only a blend of
+// two or more is kept as one: a single mode is just that mode in the row.
+const loadBlend = () => store.get('snake.blend', '').split('+').filter((m) => BLEND_MODES.includes(m)).sort();
+let blend = [...new Set(loadBlend())];
+if (prefs.mode === BLEND && blend.length < 2) prefs.mode = blend[0] ?? 'classic';
+// The modes this round plays: the blend, one mode, or none (Classic).
+const activeModes = () => (active.mode === BLEND ? blend : active.mode === 'classic' ? [] : [active.mode]);
+
 // What's actually in play this round (prefs, with any "?" rolled to a real value).
 const ROLLABLE = ['mode', 'count', 'skin', 'theme'];
 const active = {};
@@ -269,7 +282,8 @@ function resolve(key) {
     active[key] = prefs[key];
     return;
   }
-  const ids = Object.keys(OPTIONS[key]).filter((id) => id !== SURPRISE);
+  // ("?" on the mode row rolls a single mode, never the blend.)
+  const ids = Object.keys(OPTIONS[key]).filter((id) => id !== SURPRISE && id !== BLEND);
   const fresh = ids.filter((id) => id !== active[key]); // avoid repeating last round's roll
   const pool = fresh.length ? fresh : ids;
   active[key] = pool[Math.floor(Math.random() * pool.length)];
@@ -408,10 +422,23 @@ function surpriseIcon() {
 }
 
 // Game mode icons. Classic: a little board with a snake heading for a fruit.
-function modeIcon(id) {
+function modeIcon(id, tile) {
+  if (id === BLEND) return blendIcon(tile);
   const c = document.createElement('canvas');
   c.dataset.modeIcon = id;
   paintModeIcon(c);
+  return c;
+}
+
+// The blender, with a little badge for how many modes are in the blend.
+function blendIcon(tile) {
+  const c = document.createElement('canvas');
+  drawSprite(sizeCanvas(c, 45, 45), BLENDER_ICON, 2, 2, 41);
+  const badge = document.createElement('span');
+  badge.className = 'blend-count';
+  badge.id = 'blend-count';
+  tile?.classList.add('blend');
+  tile?.append(badge);
   return c;
 }
 
@@ -629,7 +656,10 @@ function wireCarousel(s) {
   track.addEventListener('click', (e) => {
     if (suppressClick) { suppressClick = false; return; }
     const tile = e.target.closest('.tile');
-    if (tile) choose(s, tile.dataset.id);
+    if (!tile) return;
+    choose(s, tile.dataset.id);
+    // The blender tile opens the pop-up to pick what goes in.
+    if (tile.dataset.id === BLEND && blend.length >= 2) openBlender();
   });
 
   track.addEventListener('scroll', () => {
@@ -695,6 +725,12 @@ function stepSetting(s, d) {
 }
 
 function choose(s, id, { scroll = true } = {}) {
+  // Landing on the blender with nothing in it yet: choose what goes in first.
+  if (id === BLEND && blend.length < 2) {
+    syncSetting(s, scroll ? 'smooth' : null);
+    openBlender();
+    return;
+  }
   if (prefs[s.key] !== id) {
     prefs[s.key] = id;
     store.set(`snake.${s.key}`, id);
@@ -727,6 +763,84 @@ function syncSetting(s, behavior) {
   s.track.setAttribute('aria-activedescendant', `opt-${s.key}-${current}`);
   if (behavior) scrollToTile(s, current, behavior);
   updateTileScales(s);
+}
+
+// ---------- blender pop-up ----------
+// Every mode's icon (not Classic): tap to put it in the blend or take it out.
+// Done keeps the choice: none = Classic, one = that mode in the row, two or
+// more = the blender tile, remembering the blend.
+let blendDraft = null; // the modes ticked while the pop-up is open
+const modeSetting = () => SETTINGS.find((s) => s.key === 'mode');
+
+function buildBlender() {
+  const host = $('blend-grid');
+  for (const id of BLEND_MODES) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'tile blend-tile';
+    b.dataset.id = id;
+    b.title = GAME_MODES[id].name;
+    b.setAttribute('aria-label', GAME_MODES[id].name);
+    const name = document.createElement('span');
+    name.className = 'blend-name';
+    name.textContent = GAME_MODES[id].name;
+    b.append(modeIcon(id), name);
+    b.addEventListener('click', () => {
+      if (blendDraft.has(id)) blendDraft.delete(id);
+      else blendDraft.add(id);
+      syncBlender();
+    });
+    host.append(b);
+  }
+}
+
+function openBlender() {
+  if (!el.blender.hidden) return;
+  // Starts from the saved blend, or else the mode picked in the row.
+  const single = BLEND_MODES.includes(prefs.mode) ? [prefs.mode] : [];
+  blendDraft = new Set(blend.length >= 2 ? blend : single);
+  el.blender.hidden = false;
+  syncBlender();
+  $('blend-done').focus({ preventScroll: true });
+}
+
+function closeBlender() {
+  if (el.blender.hidden) return;
+  el.blender.hidden = true;
+  const ids = [...blendDraft].sort();
+  const s = modeSetting();
+  if (ids.length < 2) {
+    choose(s, ids[0] ?? 'classic');
+  } else {
+    const changed = ids.join('+') !== blend.join('+');
+    blend = ids;
+    store.set('snake.blend', ids.join('+'));
+    if (prefs.mode === BLEND && changed) {
+      resolve('mode');
+      newGame(); // preview the new blend behind the menu
+    }
+    choose(s, BLEND);
+  }
+  syncBlendTile();
+  s.track.focus({ preventScroll: true });
+}
+
+function syncBlender() {
+  for (const b of $('blend-grid').children) b.setAttribute('aria-pressed', String(blendDraft.has(b.dataset.id)));
+  const n = blendDraft.size;
+  $('blend-summary').textContent = n === 0 ? 'Classic' : n === 1 ? GAME_MODES[[...blendDraft][0]].name : `${n} modes`;
+}
+
+// The blender tile's badge (how many modes) and its name.
+function syncBlendTile() {
+  const badge = $('blend-count');
+  if (!badge) return;
+  badge.hidden = blend.length < 2;
+  badge.textContent = String(blend.length);
+  const tile = $(`opt-mode-${BLEND}`);
+  const names = blend.map((m) => GAME_MODES[m].name).join(' + ');
+  tile?.setAttribute('aria-label', blend.length >= 2 ? `Blender: ${names}` : 'Blender');
+  if (tile) tile.title = blend.length >= 2 ? names : 'Blender: play several modes at once';
 }
 
 function applyTheme() {
@@ -1229,6 +1343,10 @@ window.addEventListener('keydown', (e) => {
   }
 
   if (screen === 'settings') {
+    if (!el.blender.hidden) {
+      if (e.code === 'Escape') closeBlender();
+      return;
+    }
     if (e.code === 'Escape') showScreen('menu');
     return;
   }
@@ -1296,7 +1414,7 @@ $('btn-back').addEventListener('click', () => showScreen('menu'));
 // Shuffle: every row jumps to a random concrete option ("?" and the current pick excluded).
 $('btn-shuffle').addEventListener('click', () => {
   for (const s of SETTINGS) {
-    const ids = Object.keys(s.options).filter((id) => id !== SURPRISE && id !== prefs[s.key]);
+    const ids = Object.keys(s.options).filter((id) => id !== SURPRISE && id !== BLEND && id !== prefs[s.key]);
     if (ids.length) choose(s, ids[Math.floor(Math.random() * ids.length)]);
   }
 });
@@ -1705,6 +1823,8 @@ function closeOnBackdrop(overlay, close) {
   });
 }
 closeOnBackdrop(el.settings, () => showScreen('menu'));
+closeOnBackdrop(el.blender, closeBlender);
+$('blend-done').addEventListener('click', closeBlender);
 closeOnBackdrop(el.stream, closeStream);
 
 $('btn-chat').addEventListener('click', openStream);
@@ -1767,6 +1887,8 @@ for (const k of ROLLABLE) resolve(k);
 applyTheme();
 applySkin();
 buildSettings();
+buildBlender();
+syncBlendTile();
 initIcons();
 el.mute.classList.toggle('on', isMuted());
 newGame();

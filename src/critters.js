@@ -328,3 +328,26 @@ export function shapeSprite(shape, color, light, dark, edge) {
   });
 }
 
+
+// Blender (play several modes at once): a glass jug of chopped fruit on its motor base.
+export const BLENDER_ICON = sprite(14, 14, (px) => {
+  map(px, [
+    '....LLLLLL....',
+    '...LllllllL...',
+    '...gggggggg...',
+    '...gGaaaaag...',
+    '...gGaryaag...',
+    '...gGrryyag...',
+    '....gnrypg....',
+    '....gnnppg....',
+    '....gggggg....',
+    '...bbbbbbbb...',
+    '..bBBBBkBBBb..',
+    '..bBBBBBBBBb..',
+    '..bbbbbbbbbb..',
+  ], {
+    L: '#4A4A58', l: '#6E6E80', g: '#BFE3EE', G: '#FFFFFF', a: 'rgba(214, 242, 250, 0.55)',
+    r: '#E8364F', y: '#F6C343', n: '#5FB84A', p: '#9B5CE0', b: '#5A5A6A', B: '#8A8A9C', k: '#F2709A',
+  }, 0, 1);
+  outline(px, '#22222C');
+});
