@@ -1,6 +1,6 @@
 # Blender: play any mix of game modes at once
 
-Status: draft for review (not scheduled to build yet).
+Status: built on the `blender` branch (see "Decisions made during the build" at the end).
 
 ## Why
 
@@ -244,3 +244,60 @@ mode already uses, applied to all of them.
 3. **Keys with Winged / Magnet:** do the keys fly too, or stay put on the grid?
 4. **Poison decoys:** always loose single fruit (my default), or wrapped the
    same way as the real fruit (decoy locks, decoy boxes)?
+
+## Answers (from the streamer)
+
+1. Head into a walled side of a flying fruit: a death, like a wall on a grid fruit.
+2. Box with fruit count above 1 in a blend: each fruit gets its own box and target, linked by the box's id.
+3. Keys with Winged / Magnet: keys stay put; only the fruit flies once revealed.
+4. Poison decoys: always loose single fruit, never locked, boxed or paired (they still move and get shields).
+
+## Decisions made during the build
+
+Calls the design (and the answers above) didn't settle.
+
+**Settings**
+- The blend is saved as its key in `snake.blend` (e.g. `box+key`), with `snake.mode` = `blend`. A saved blend with fewer than two known modes falls back to its one mode (or Classic), so a bad save can't break anything.
+- `state.mode` stays a string: the blend key (`classic`, `box`, `box+key`…), so high scores (`snake.best.<size>.<key>`) and everything that already read `game.mode` keep working. A one-mode blend has exactly today's key.
+- Clicking the blender tile opens the pop-up. Dragging or arrowing onto it when no blend is saved yet also opens it (the row stays where it was until you pick two or more).
+- The pop-up starts from the saved blend, or the row's current mode if there's no blend yet. The choice is applied on Done, Esc, or a click outside.
+- Pop-up look: a 5 × 2 grid of the mode icons with names; chosen ones light up with an accent ring and a small pop. The blender icon is a pixel glass jug of chopped fruit on its base; the count badge sits at its bottom-right.
+- Shuffle never lands on the blender, and neither does **?**.
+
+**Wrapping**
+- Keys + Box + Portal: one lock per slot (not two). The lock opens to a box; the box lets out one end of the pair and the twin appears at the same moment (the Box + Portal rule). Two locks per slot only with Keys + Portal and no Box.
+- Keys + Box: the lock is placed by the box's rules (off the edge, 8 squares clear, ≥ 3 from the head) and must keep the board open. The target is laid out with it (≥ 2 from the lock); the key goes ≥ 2 from the lock and never on the target. All three share a `slot` id; the box takes an id reserved on the lock, so the target already knows its box.
+- Box in a blend follows the fruit count (one box + target per slot). Box on its own is still always one.
+- A box may be pushed onto another box's target and sit there (as chat boxes already could); only its own target opens it.
+- Loose fruit in a blend lands ≥ 3 from the head when there's room (anywhere free otherwise). With Poison it's strict, as Poison mode is. Single modes place fruit exactly as before.
+- Chat's drops stay plain in a blend: a chat lock or box lets out a plain fruit (not a pair, not flying, no walls), as in any mode, and never counts as a slot.
+
+**Placement**
+- With Box in the blend, walls never land in the 8-square ring round a box (or round a lock that will become one) or on a target; mine fields keep their whole 3 × 3 off those rings and targets.
+- In every mode, a flag never lands on a key, lock, box or target, a box pushed onto a flag, lock or key is a bump (it respawns), and a respawning box never lands on a flag. Before, these could only happen with chat drops.
+- **Locks and walls now keep the board open with locks opened too** (all of them, and each one alone), so opening a lock can never leave a dead end. The fuzz found this trap in plain Keys mode (a lock opening into a corner pocket next to another lock, where eating the fruit is a certain death). Comparing against `main`: 48 of 1,600 seeded Keys starts lay their locks out differently now, and every one of those 48 had the trap. Every other single mode plays move-for-move the same as `main` in the same comparison.
+
+**Movement**
+- Winged + Magnet: the heading turns toward the head at half Magnet's steering, and the speed is held at Winged's (`fly: 'both'`; drawn with wings).
+- Flying fruit is pushed back onto the board after bouncing off a block or the head near the edge. Before, a bounce near the edge could carry a fruit off the board in Winged mode too.
+- A flying fruit's walls: the side facing the head is the one along the bigger of the two gaps (left/right or up/down). It's a death only when the head is moving toward the fruit. When the fruit flies into the head wall-first, it bounces off instead: you can't be killed from behind or the side. The walls are drawn at 85% of a square, to suit the smaller flying fruit.
+- A caught flying fruit scores and grows straight away, as today. If eating it sets anything else off (portal, Twin, Walls, Mines, chat's `!twin`), all of that, and rebuilding its slot, waits for the next step. Otherwise the slot is rebuilt at once, as today.
+- Through a flying portal, the next move goes straight out of the twin; whatever was in front of the head that tick doesn't matter. The exit is the square under the twin's centre, or the nearest free one. It's never inside the mine field the head is already in when that move would set it off.
+- Two flying portal ends caught in the same frame: the head goes through the first. The second pair's twin vanishes too, and both fruits score.
+- A caught flying poison fruit poisons, exactly like eating one (no point, no growth), and is replaced.
+- Chat's `!twin` now also flips the snake for a flying fruit. It didn't before.
+
+**On-eat**
+- The flip now comes before the wall, the field and the refill in every mode, so with chat's `!twin` in Walls mode the wall now avoids the *new* head's path. That's a small change from before, when the wall dropped first.
+- Twin + Mines: flipping out of a field counts as leaving it, so the field is cleared (it's only the head that counts).
+- With a random fruit count, poison fruit isn't replaced one by one; it's cleared with its batch, as in Poison mode.
+
+**Poison wander**
+- Keys, boxes and portal fruit are last resorts: ranked above certain death but below every other move. (The first version treated them as walls; the fuzz found the wander driving into the board edge when a key, a box or a portal was the only way out.)
+- The look-ahead counts moves inside mine fields, so the wander never takes a 4th move in one, however many moves ahead.
+
+**Resizing (chat's `!size`) in a blend**
+- Pieces whose partner fell off the board go too: a target and its box, or the lock that would become it, and their key. Then the slots and poison are topped back up to the count.
+
+**Animations**
+- A flip caused by a flying fruit doesn't draw a second "eaten" fruit at the tail, and a flying portal doesn't draw the grid portal's two fruits.
