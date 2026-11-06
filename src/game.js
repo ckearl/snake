@@ -33,6 +33,9 @@ export const FRUIT_COUNTS = { one: 1, three: 3, five: 5, ten: 10, random: 'rando
 //  poison  – every regular fruit comes with a poison one. Eating poison hands
 //            the snake over to a random (but never suicidal) wander for as many
 //            moves as it is long.
+//  mines   – every fruit eaten lays a 3×3 mine field with a flag in the middle.
+//            Touch the flag, or spend 4+ moves inside, and it's over; dip in and
+//            out within 3 moves and the field is cleared.
 export const GAME_MODES = {
   classic: { name: 'Classic' },
   wall: { name: 'Walls' },
@@ -42,6 +45,7 @@ export const GAME_MODES = {
   magnet: { name: 'Magnet' },
   box: { name: 'Box' },
   poison: { name: 'Poison' },
+  mines: { name: 'Mines' },
 };
 
 // Modes where fruits move freely. Flying is a per-fruit property (`fly`), so a
@@ -53,6 +57,8 @@ export const WING_SPEED = 2.2; // cells per second
 export const MAGNET_SPEED = 2; // top speed toward the head, cells per second
 export const MAGNET_STEER = 2.5; // how quickly a fruit turns toward the head (per second)
 export const FRUITS_PER_WALL = 2;
+// Mines: a field is 3×3 around its flag; this many moves inside is fatal.
+export const MINE_LIMIT = 4;
 // New boxes / poison fruits / mine fields keep at least this far from the head
 // (Chebyshev distance: squares in any direction, diagonals included).
 export const SPAWN_CLEARANCE = 3;
@@ -91,6 +97,9 @@ export function createGame({ cols, rows, fruitCount = 1, mode = 'classic', rng =
     targets: [], // box mode: { x, y, id } – push a box here to release its fruit
     pushing: false, // box mode: the last step pushed a box
     poison: 0, // poison mode: moves left before the player gets control back
+    mines: [], // mines mode: { x, y, id } – flag square; the field is the 3×3 around it
+    mineVisit: null, // { id, n }: the field the head is in and how many moves it's been there
+    cleared: [], // fields cleared by the last step (for the confetti)
     jumps: [], // portal mode: open portals { from, to, pair } while the body passes through
     nextPair: 1,
     nextId: 1,
@@ -123,7 +132,8 @@ export function queueTurn(state, dir) {
 }
 
 // Advance one tick. Returns 'move' | 'eat' | 'portal' | 'flip' | 'push' | 'release' |
-// 'bump' | 'die' | 'win' (or null if not running).
+// 'bump' | 'poison' | 'clear' | 'die' | 'win' (or null if not running). Mine
+// fields cleared by the step are listed in state.cleared.
 export function step(state) {
   if (state.status !== 'running') return null;
 
@@ -142,9 +152,11 @@ export function step(state) {
   state.justTeleported = false;
   state.leftExit = null;
   state.pushing = false;
+  state.cleared = [];
 
   if (!inBounds(state, next)) return die(state);
   if (state.walls.some((w) => same(w, next))) return die(state);
+  if (state.mines.some((m) => same(m, next))) return die(state); // the flag
 
   // Flying fruits are caught continuously (updateFlyers), not by stepping onto a square.
   const eatIdx = state.foods.findIndex((f) => !f.fly && same(f, next));
@@ -188,6 +200,7 @@ export function step(state) {
   }
   if (leavingExit && !eating) state.leftExit = { exit: { x: head.x, y: head.y } };
   pruneJumps(state);
+  if (state.mines.length && !trackMines(state)) return die(state);
   if (!eating) {
     if (occupiedCount(state) >= state.cols * state.rows) return win(state);
     if (push === 'bump') {
@@ -196,7 +209,8 @@ export function step(state) {
       if (!spot) return win(state);
       state.boxes.push({ ...spot, id: state.nextId++ });
     }
-    return push ?? 'move';
+    // (A cleared mine field is its own event so a late turn can't undo it.)
+    return push ?? (state.cleared.length ? 'clear' : 'move');
   }
 
   const eatenFood = state.foods[eatIdx];
@@ -211,6 +225,8 @@ export function step(state) {
   state.score += 1;
 
   if (state.mode === 'wall' && state.score % FRUITS_PER_WALL === 0) spawnWall(state);
+  // Mines: every fruit lays a field; no room for one any more is a win.
+  if (state.mode === 'mines' && !eatenFood.bonus && !spawnMine(state)) return win(state);
   // Checked after the wall drops: walls shrink the board, so a wall taking the
   // last open square means there's nothing left to fill — that's a win.
   if (occupiedCount(state) >= state.cols * state.rows) return win(state);
@@ -361,7 +377,7 @@ export function updateFlyers(state, dt, head = null) {
   if (state.status !== 'running' || !state.foods.some((f) => f.fly)) return [];
   const h = head ?? { x: state.snake[0].x + 0.5, y: state.snake[0].y + 0.5 };
   const r = FRUIT_RADIUS;
-  const obstacles = [...state.snake.slice(1), ...state.walls, ...state.boxes];
+  const obstacles = [...state.snake.slice(1), ...state.walls, ...state.boxes, ...state.mines];
 
   for (const f of state.foods) {
     if (!f.fly) continue;
@@ -448,6 +464,9 @@ export function snapshot(state) {
     targets: state.targets.map((t) => ({ ...t })),
     pushing: state.pushing,
     poison: state.poison,
+    mines: state.mines.map((m) => ({ ...m })),
+    mineVisit: state.mineVisit && { ...state.mineVisit },
+    cleared: [...state.cleared],
     jumps: state.jumps.map((j) => ({ ...j, from: { ...j.from }, to: { ...j.to } })),
     grow: state.grow,
     score: state.score,
@@ -550,6 +569,72 @@ export function spawnFoods(state, n) {
     }
   }
   return true;
+}
+
+// ---------- mines mode ----------
+const inField = (m, c) => cheb(m, c) <= 1;
+
+// Count the head's moves inside a mine field. Leaving within MINE_LIMIT - 1
+// moves clears the field; reaching MINE_LIMIT is fatal. Returns false on death.
+function trackMines(state) {
+  const h = state.snake[0];
+  const m = state.mines.find((q) => inField(q, h));
+  const v = state.mineVisit;
+  if (v && (!m || m.id !== v.id)) {
+    // Out of the field (or straight into a neighbouring one): it's cleared.
+    const gone = state.mines.find((q) => q.id === v.id);
+    if (gone) {
+      state.mines = state.mines.filter((q) => q !== gone);
+      state.cleared.push(gone);
+    }
+    state.mineVisit = null;
+  }
+  if (m) {
+    state.mineVisit = state.mineVisit ? { id: m.id, n: state.mineVisit.n + 1 } : { id: m.id, n: 1 };
+    if (state.mineVisit.n >= MINE_LIMIT) return false;
+  }
+  return true;
+}
+
+// Lay a mine field: the whole 3×3 on the board, clear of walls, fruit and other
+// fields, at least SPAWN_CLEARANCE from the head. It may cover the snake's body,
+// but never on the flag square. Returns the field, or null if none fits.
+export function spawnMine(state) {
+  const { cols, rows } = state;
+  const h = state.snake[0];
+  const solid = new Set([...state.walls, ...state.foods.filter((f) => !f.fly)].map((c) => c.y * cols + c.x));
+  const body = new Set(state.snake.map((c) => c.y * cols + c.x));
+  const ok = [];
+  for (let y = 1; y < rows - 1; y++) {
+    for (let x = 1; x < cols - 1; x++) {
+      if (body.has(y * cols + x)) continue;
+      if (h && cheb(h, { x, y }) < SPAWN_CLEARANCE) continue;
+      if (state.mines.some((m) => cheb(m, { x, y }) <= 2)) continue; // fields can't overlap
+      let clear = true;
+      for (let dy = -1; dy <= 1 && clear; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (solid.has((y + dy) * cols + x + dx)) { clear = false; break; }
+        }
+      }
+      if (clear) ok.push({ x, y });
+    }
+  }
+  if (!ok.length) return null;
+  const m = ok[Math.floor(state.rng() * ok.length)];
+  m.id = state.nextId++;
+  state.mines.push(m);
+  return m;
+}
+
+// Squares inside a mine field (flags included).
+function mineCells(state) {
+  const out = [];
+  for (const m of state.mines) {
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) out.push({ x: m.x + dx, y: m.y + dy });
+    }
+  }
+  return out;
 }
 
 // ---------- poison mode ----------
@@ -761,6 +846,9 @@ export function resizeBoard(state, cols, rows) {
   state.foods = foods;
   state.walls = state.walls.map(move).filter(inside);
   state.boxes = state.boxes.map(move).filter(inside);
+  // Mine fields have to fit on the board whole.
+  state.mines = state.mines.map(move).filter((m) => m.x >= 1 && m.y >= 1 && m.x < cols - 1 && m.y < rows - 1);
+  if (state.mineVisit && !state.mines.some((m) => m.id === state.mineVisit.id)) state.mineVisit = null;
   state.targets = state.targets.map(move).filter(inside);
   state.jumps = state.jumps
     .map((j) => ({ ...j, from: move(j.from), to: move(j.to) }))
@@ -803,16 +891,21 @@ export function resizeBoard(state, cols, rows) {
   return true;
 }
 
+// Free squares for fruit and walls. Mine fields are avoided while there's
+// anywhere else (their flags always).
 function freeCells(state, extraBlocked = []) {
+  const key = (s) => Math.floor(s.y) * state.cols + Math.floor(s.x);
   const occupied = new Set(
-    [...state.snake, ...state.foods, ...state.walls, ...state.boxes, ...state.targets, ...extraBlocked]
-      .map((s) => Math.floor(s.y) * state.cols + Math.floor(s.x)),
+    [...state.snake, ...state.foods, ...state.walls, ...state.boxes, ...state.targets, ...state.mines, ...extraBlocked]
+      .map(key),
   );
+  const fields = new Set(mineCells(state).map(key));
   const free = [];
+  const inFields = [];
   for (let i = 0; i < state.cols * state.rows; i++) {
-    if (!occupied.has(i)) free.push(i);
+    if (!occupied.has(i)) (fields.has(i) ? inFields : free).push(i);
   }
-  return free;
+  return free.length ? free : inFields;
 }
 
 export function placeFood(state, extraBlocked = []) {

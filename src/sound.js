@@ -83,6 +83,16 @@ export const sfx = {
     tone(440, 0, 0.07, { type: 'triangle', vol: 0.05 });
     tone(660, 0.07, 0.1, { type: 'triangle', vol: 0.05 });
   },
+  // Mines: a field lands with two soft blips; clearing one sparkles.
+  mine() {
+    if (muted) return;
+    tone(260, 0, 0.05, { type: 'triangle', vol: 0.05 });
+    tone(260, 0.09, 0.05, { type: 'triangle', vol: 0.04 });
+  },
+  clear() {
+    if (muted) return;
+    [784, 988, 1175, 1568].forEach((f, i) => tone(f, i * 0.055, 0.08, { type: 'triangle', vol: 0.05 }));
+  },
   start() {
     if (muted) return;
     tone(523, 0, 0.07);

@@ -1,7 +1,7 @@
 // Canvas drawing: board, snake, and pixel sprites. No game rules here.
 import { SKINS, DEFAULT_SKIN, skinColor, shade, mix } from './themes.js';
 import { FRUITS, DEFAULT_FRUIT } from './fruits.js';
-import { BOX } from './critters.js';
+import { BOX, FLAG } from './critters.js';
 
 export const PALETTE = {
   cellA: '#B4D0F9',
@@ -219,6 +219,53 @@ export function drawTarget(ctx, x, y, cell, ms) {
     ctx.fillRect(sx > 0 ? cx : cx - u, sy > 0 ? cy : cy - arm, u, arm);
   }
   ctx.globalAlpha = 1;
+}
+
+// Mine field: the 3×3 around a flag at (x, y), as a faint tint inside a dashed
+// outline in the board accent. `visit` is how many moves the head has spent
+// inside (0 if it isn't in): the tint deepens and the outline warms toward red,
+// blinking on the last safe move. `born` (0..1) fades it in.
+export function drawMineField(ctx, x, y, cell, { visit = 0, born = 1, ms = 0, limit = 4 } = {}) {
+  const x0 = Math.round((x - 1) * cell);
+  const y0 = Math.round((y - 1) * cell);
+  const s = Math.round(cell * 3);
+  const u = Math.max(2, Math.round(cell * 0.07));
+  const warn = visit >= limit - 1;
+  const color = warn ? (Math.floor(ms / 140) % 2 ? '#FF4D5E' : PALETTE.accent)
+    : visit === limit - 2 ? mix(PALETTE.accent, '#FF4D5E', 0.45) : PALETTE.accent;
+
+  ctx.globalAlpha = born * (0.1 + 0.06 * visit);
+  ctx.fillStyle = color;
+  ctx.fillRect(x0, y0, s, s);
+  // Faint dotted lines between the cells.
+  ctx.globalAlpha = born * 0.35;
+  const dot = Math.max(1, Math.round(u / 2));
+  for (let k = 1; k < 3; k++) {
+    const p = Math.round(k * cell);
+    for (let d = Math.round(cell * 0.2); d < s; d += Math.round(cell / 3)) {
+      ctx.fillRect(x0 + p - dot / 2, y0 + d, dot, dot);
+      ctx.fillRect(x0 + d, y0 + p - dot / 2, dot, dot);
+    }
+  }
+  // Dashed outline, drawn as pixel dashes so it stays crisp.
+  ctx.globalAlpha = born;
+  const dash = Math.max(4, Math.round(cell * 0.28));
+  const gap = Math.max(3, Math.round(cell * 0.18));
+  for (let d = 0; d < s; d += dash + gap) {
+    const len = Math.min(dash, s - d);
+    ctx.fillRect(x0 + d, y0, len, u);
+    ctx.fillRect(x0 + s - d - len, y0 + s - u, len, u);
+    ctx.fillRect(x0, y0 + s - d - len, u, len);
+    ctx.fillRect(x0 + s - u, y0 + d, u, len);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// The flag in a mine field's middle square, gently waving.
+export function drawFlag(ctx, x, y, cell, ms, scale = 1) {
+  const size = cell * 0.86 * scale;
+  const pose = FLAG[Math.floor(ms / 380) % 2];
+  drawSprite(ctx, pose, (x + 0.5) * cell - size / 2, (y + 0.5) * cell - size / 2 - cell * 0.02, size, { shadow: true });
 }
 
 // Winged fruit: little pixel wings either side of a fruit centred at (cx, cy) px,

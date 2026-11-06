@@ -1,18 +1,20 @@
 import {
-  BOARD_SIZES, FRUIT_COUNTS, SPEEDS, GAME_MODES, BASE_TICK_MS,
+  BOARD_SIZES, FRUIT_COUNTS, SPEEDS, GAME_MODES, BASE_TICK_MS, MINE_LIMIT,
   createGame, queueTurn, step, redirectExit, updateFlyers, snapshot, lateTurn,
   spawnWall, addBonusFlyer, resizeBoard,
 } from './game.js';
 import {
   sizeCanvas, drawBoard, drawSnake, drawSnakePath, interpolateSnake, snakePoints, drawWall, drawWings, drawFruit, drawSprite, drawCrown, drawScene, setBoardColors, setSnakeSkin,
-  drawBox, drawTarget, drawPoisonBubbles, isPurpleFruit,
+  drawBox, drawTarget, drawPoisonBubbles, isPurpleFruit, drawMineField, drawFlag, PALETTE,
 } from './render.js';
 import { THEMES, SKINS, DEFAULT_THEME, DEFAULT_SKIN, THEME_ICONS, shade, boardAccent } from './themes.js';
 import { FRUITS, DEFAULT_FRUIT, BASKET } from './fruits.js';
 import {
-  BUNNY, TURTLE, WALL_ICON, PORTAL_ICON, YINYANG_ICON, MAGNET_ICON, BOX,
+  BUNNY, TURTLE, WALL_ICON, PORTAL_ICON, YINYANG_ICON, MAGNET_ICON, BOX, MINES_ICON,
 } from './critters.js';
-import { makeFireworks, drawFireworks, drawDizzyStars } from './effects.js';
+import {
+  makeFireworks, drawFireworks, drawDizzyStars, makeConfetti, drawConfetti, CONFETTI_MS,
+} from './effects.js';
 import { sfx, isMuted, setMuted } from './sound.js';
 import { CommandRouter, matchOption, COMMANDS, loadCommandConfig } from './commands.js';
 import { TwitchChat } from './chat.js';
@@ -90,6 +92,8 @@ const pairKinds = new Map(); // portal pair id -> fruit kind (distinct per pair 
 const foodBorn = new Map(); // "x,y" -> time the fruit appeared (for pop-in)
 const boxBorn = new Map(); // box id -> time it appeared (for pop-in)
 let boxGone = []; // boxes leaving the board: { x, y, to?, t0 } (released onto a target, or knocked away)
+const mineBorn = new Map(); // mine field id -> time it appeared (for fade-in)
+let confetti = []; // cleared mine fields: { pieces, t0 }
 let deathTimer = null;
 let prevSnake = null; // snake before the latest step (for smooth interpolation)
 let endFx = null; // { type: 'lose' | 'win', t0, fireworks? }
@@ -107,6 +111,8 @@ function newGame() {
   foodBorn.clear();
   boxBorn.clear();
   boxGone = [];
+  mineBorn.clear();
+  confetti = [];
   wallBorn.clear();
   pairKinds.clear();
   prevSnake = null;
@@ -356,7 +362,7 @@ function modeIcon(id) {
 // Classic: a tiny board with a snake heading for a fruit. The other modes are
 // simple pixel sprites: a brick wall, two offset portals.
 const MODE_SPRITES = {
-  wall: WALL_ICON, portal: PORTAL_ICON, yinyang: YINYANG_ICON, magnet: MAGNET_ICON, box: BOX,
+  wall: WALL_ICON, portal: PORTAL_ICON, yinyang: YINYANG_ICON, magnet: MAGNET_ICON, box: BOX, mines: MINES_ICON,
 };
 function paintModeIcon(c) {
   const id = c.dataset.modeIcon;
@@ -689,6 +695,16 @@ function drawGame(t) {
   // Box targets lie flat on the board, under everything else.
   for (const tg of game.targets) drawTarget(ctx, tg.x, tg.y, cell, t);
 
+  // Mine fields (the snake's body may lie over them; the flag never has it on).
+  for (const m of game.mines) {
+    if (!mineBorn.has(m.id)) mineBorn.set(m.id, t);
+    const born = Math.min(1, (t - mineBorn.get(m.id)) / 260);
+    const visit = game.mineVisit?.id === m.id ? game.mineVisit.n : 0;
+    drawMineField(ctx, m.x, m.y, cell, { visit, born, ms: t, limit: MINE_LIMIT });
+    drawFlag(ctx, m.x, m.y, cell, t + m.id * 113, born < 1 ? 0.4 + 0.6 * born : 1);
+  }
+  for (const id of mineBorn.keys()) if (!game.mines.some((m) => m.id === id)) mineBorn.delete(id);
+
   // How far through the current tile the snake is (0..1). Paused keeps its place.
   const moving = game.status === 'running' || game.status === 'paused';
   const alpha = moving && prevSnake ? Math.min(1, acc / tickMs()) : 1;
@@ -756,6 +772,9 @@ function drawGame(t) {
   } else {
     drawSnake(ctx, game.snake, cell, opts);
   }
+
+  confetti = confetti.filter((c) => t - c.t0 < CONFETTI_MS);
+  for (const c of confetti) drawConfetti(ctx, c.pieces, t - c.t0, cell);
 }
 
 // Box mode crates. A pushed box slides along with the head; a released one
@@ -894,6 +913,11 @@ function afterStep(ev, before, wallsBefore) {
       sfx.wall();
     }
   }
+  for (const m of game.cleared) {
+    confetti.push({ pieces: makeConfetti(m.x + 0.5, m.y + 0.5, PALETTE.accent), t0: performance.now() });
+    sfx.clear();
+  }
+  if (lastSnap && game.mines.length > lastSnap.mines.length - game.cleared.length) sfx.mine();
   if (ev === 'die' || ev === 'win') onGameEnd(ev);
 }
 
@@ -1112,6 +1136,7 @@ const ACTIONS = {
       portalFruits = null;
       eaten = [];
       boxGone = [];
+      confetti = [];
       wallBorn.clear();
       fitBoard();
     } else if (screen !== 'play') {

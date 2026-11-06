@@ -81,3 +81,42 @@ export function drawDizzyStars(ctx, cx, cy, cell, ms, alpha = 1) {
   }
   ctx.globalAlpha = 1;
 }
+
+// Gentle confetti for a cleared mine field: a soft pop upward, then the pieces
+// drift down, swaying side to side and fluttering, and fade out.
+// (cx, cy) is the field's centre in cell units.
+const CONFETTI_COLORS = ['#FFD34D', '#FF8FA3', '#7FD4FF', '#B6F07A', '#FFFFFF', '#C9A2FF'];
+export const CONFETTI_MS = 2200;
+
+export function makeConfetti(cx, cy, accent, rng = Math.random) {
+  const colors = [...CONFETTI_COLORS, accent];
+  return Array.from({ length: 24 }, () => ({
+    x: cx + (rng() - 0.5) * 2.6,
+    y: cy + (rng() - 0.5) * 2.2,
+    pop: -(1.2 + rng() * 1.3), // initial upward speed, cells/s
+    fall: 0.55 + rng() * 0.4, // gentle drift-down speed, cells/s
+    sway: 0.15 + rng() * 0.2, // side-to-side, cells
+    freq: 2.5 + rng() * 2.5, // rad/s
+    phase: rng() * Math.PI * 2,
+    life: 1500 + rng() * (CONFETTI_MS - 1500),
+    color: colors[Math.floor(rng() * colors.length)],
+  }));
+}
+
+export function drawConfetti(ctx, pieces, ms, cell) {
+  const u = Math.max(2, Math.round(cell * 0.07));
+  const t = ms / 1000;
+  for (const p of pieces) {
+    if (ms >= p.life) continue;
+    // Velocity eases from the pop to the steady fall.
+    const y = p.y + p.fall * t + ((p.pop - p.fall) * (1 - Math.exp(-4 * t))) / 4;
+    const x = p.x + p.sway * Math.sin(p.freq * t + p.phase);
+    const k = ms / p.life;
+    ctx.globalAlpha = k < 0.55 ? 1 : 1 - (k - 0.55) / 0.45;
+    ctx.fillStyle = p.color;
+    // Flutter: the piece turns, so its width breathes.
+    const w = Math.max(1, Math.round(u * 1.6 * Math.abs(Math.cos(p.freq * 1.4 * t + p.phase))));
+    ctx.fillRect(Math.round(x * cell - w / 2), Math.round(y * cell - u / 2), w, u);
+  }
+  ctx.globalAlpha = 1;
+}

@@ -124,3 +124,55 @@ export const BOX = sprite(14, 14, (px) => {
   ], { F: '#E3BC7E', f: '#B98A4E', t: '#CFA164', X: '#8E5F31' }, 1, 1);
   outline(px, '#5A3A1C');
 });
+
+// Mine field flag: red pennant on a dark pole, in two waving poses.
+const FLAG_COLORS = { k: '#3A2A22', R: '#E8364F', r: '#B3203A', w: '#FF8A9C', b: '#6B5A4E' };
+export const FLAG = [
+  [
+    '..k.........',
+    '..kwRRR.....',
+    '..kRRRRRR...',
+    '..kRRRRRRRR.',
+    '..kRRRRRrr..',
+    '..kRRrr.....',
+    '..k.........',
+    '..k.........',
+    '..k.........',
+    '..k.........',
+    '.bbbb.......',
+  ],
+  [
+    '..k.........',
+    '..kwRRRR....',
+    '..kRRRRRRR..',
+    '..kRRRRRRRRR',
+    '..kRRRRrr...',
+    '..kRrr......',
+    '..k.........',
+    '..k.........',
+    '..k.........',
+    '..k.........',
+    '.bbbb.......',
+  ],
+].map((rows) => sprite(14, 13, (px) => {
+  map(px, rows, FLAG_COLORS, 1, 1);
+  outline(px, '#1E1612');
+}));
+
+// Mines mode icon: a dashed 3×3 field with the flag in the middle.
+export const MINES_ICON = sprite(15, 15, (px) => {
+  for (let i = 0; i < 15; i++) {
+    const on = i % 4 < 2;
+    if (!on) continue;
+    for (const [x, y] of [[i, 0], [i, 14], [0, i], [14, i]]) px[y][x] = '#F3A93D';
+  }
+  map(px, [
+    '.k.....',
+    '.kRRR..',
+    '.kRRRRR',
+    '.kRRr..',
+    '.k.....',
+    '.k.....',
+    'bbb....',
+  ], FLAG_COLORS, 5, 4);
+});

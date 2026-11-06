@@ -21,6 +21,7 @@ Top bar: fullscreen, mute, and close (back to menu).
 - **Magnet** — fruits fly like Winged, but steer toward your head (your body still blocks them).
 - **Box** — the fruit is shut in a wooden box. Push the box (head first) onto its target square to release the fruit, then eat it as a separate move — you can leave it there for later. Pushing the box into the edge or a wall knocks it to a new spot (the target stays); pushing it into your own body is a death. Always one box and one target (fruit count is ignored). New boxes land at least 3 squares from your head with all 8 squares around them open; you win once there's no room for another box and target.
 - **Poison** — each regular fruit comes with a poison one (purple, bubbling; purple fruits like grapes go toxic green). Poison gives no point and no length: instead it takes the wheel for as many moves as the snake is long. The snake turns grey with dizzy eyes and wanders — straight half the time, left or right a quarter each — but only among moves that are safe (it looks ahead so it never steers into a wall, itself, or a dead end it can't get out of). It flickers back to its colour over the last two moves. Fruit count = regular fruits (with as many poison ones). Fruits land at least 3 squares from your head; you win once there's no room for the next one.
+- **Mines** — every fruit you eat lays a 3×3 mine field (dashed outline in a colour complementary to the board) with a flag in the middle. Touch the flag, or let your head spend 4 moves inside a field, and it's over; dip in and back out within 3 moves and the field is cleared with a little confetti. The field warms toward red as you linger and blinks on your last safe move. Only the head counts — your body can lie across a field, and a new field may land over your body (never on its flag square), so late in a game a field may show little more than its flag. Fields fit whole on the board, never overlap, land at least 3 squares from your head and away from fruit; fruit avoids fields while there's anywhere else. You win once there's no room for another field.
 
 The shuffle button at the bottom of Settings randomises every row.
 
@@ -61,8 +62,8 @@ your own settings come back. A toast credits the viewer for each action. With `?
 - `src/chat.js` — anonymous read-only Twitch chat (IRC over WebSocket).
 - `src/render.js` — canvas drawing: board, snake, orange/crown sprites, menu scene.
 - `src/sound.js` — WebAudio blips (eat / die / start / win jingle), mute persisted.
-- `src/effects.js` — win fireworks and dizzy stars for the loss bonk.
-- Tests: `test/game.test.js` (rules), `test/modes.test.js` (walls/portals), `test/box.test.js` (box mode), `test/poison.test.js` (poison mode), `test/render.test.js` (smooth movement), `test/actions.test.js` (chat actions), `test/commands.test.js` (commands + IRC parsing).
+- `src/effects.js` — win fireworks, dizzy stars for the loss bonk, confetti for a cleared mine field.
+- Tests: `test/game.test.js` (rules), `test/modes.test.js` (walls/portals), `test/box.test.js` (box mode), `test/poison.test.js` (poison mode), `test/mines.test.js` (mines mode), `test/render.test.js` (smooth movement), `test/actions.test.js` (chat actions), `test/commands.test.js` (commands + IRC parsing).
 - `src/main.js` — screens (menu, settings, play), input, game loop, layout.
 - `style.css` — layout and UI styling.
 
