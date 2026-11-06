@@ -38,8 +38,10 @@ on the button is green when connected. The channel is remembered.
 | `!size [small\|medium\|large\|bigger\|smaller]` | Changes the board size (random if no size given). Shrinking centres on the head; anything outside is lost | 8s |
 | `!color [name]` | Snake colour, e.g. `!color red`, `!color pink to yellow` (random if none) | 3s |
 | `!mapcolor [name]` | Board colour, e.g. `!mapcolor volcano` (random if none) | 3s |
+| `!fruit [name\|mixed]` | Fruit type, e.g. `!fruit kiwi`, `!fruit watermelon`, `!fruit basket` for mixed (random if none) | 3s |
+| `!speed [slow\|normal\|fast\|turtle\|snake\|bunny\|faster\|slower]` | Snake speed for the rest of the round (random if none) | 5s |
 
-Size and colour changes from chat last for the current round (or the next, if sent from the menu), then
+Size, colour, fruit and speed changes from chat last for the current round (or the next, if sent from the menu), then
 your own settings come back. A toast credits the viewer for each action. With `?debug`,
 `snakeDebug.chat('name', '!wall')` simulates a chat message.
 

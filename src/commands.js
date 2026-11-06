@@ -11,6 +11,8 @@ export const COMMANDS = {
   size: { action: 'size', cooldown: 8000 },
   color: { action: 'color', cooldown: 3000 },
   mapcolor: { action: 'mapcolor', cooldown: 3000 },
+  fruit: { action: 'fruit', cooldown: 3000 },
+  speed: { action: 'speed', cooldown: 5000 },
 };
 
 // "!Size  Small" -> { name: 'size', arg: 'small' }; anything else -> null.

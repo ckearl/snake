@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseCommand, matchOption, CommandRouter } from '../src/commands.js';
 import { SKINS, THEMES } from '../src/themes.js';
+import { FRUITS } from '../src/fruits.js';
+import { SPEEDS } from '../src/game.js';
 import { parseIrcLine } from '../src/chat.js';
 
 test('parseCommand: known commands, any case, optional argument', () => {
@@ -53,4 +55,13 @@ test('parseIrcLine: PING and JOIN', () => {
     { c: 'PING', t: 'tmi.twitch.tv' },
   );
   assert.equal(parseIrcLine(':justinfan123!justinfan123@justinfan123.tmi.twitch.tv JOIN #ckearl').command, 'JOIN');
+});
+
+test('!fruit and !speed parse, with loose names', () => {
+  assert.deepEqual(parseCommand('!fruit Water Melon'), { name: 'fruit', arg: 'water melon' });
+  assert.deepEqual(parseCommand('!speed bunny'), { name: 'speed', arg: 'bunny' });
+  assert.equal(matchOption('water melon', FRUITS), 'watermelon');
+  assert.equal(matchOption('JALAPENO', FRUITS), 'jalapeno');
+  assert.equal(matchOption('white turnip', FRUITS), 'turnip');
+  assert.equal(matchOption('fast', SPEEDS), 'fast');
 });

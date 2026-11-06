@@ -64,11 +64,13 @@ const bestKey = () => `snake.best.${sizeKey}`;
 // Chat can change the size and colours for the current round (or the next one, if
 // it happens on the menu). They're cleared once that round ends, so chat never
 // overwrites the streamer's own settings.
-const chatOverride = { size: null, skin: null, theme: null };
+const chatOverride = { size: null, skin: null, theme: null, fruit: null, speed: null };
 let roundPlayed = false; // a round with the current overrides has started
 const boardSizeKey = () => chatOverride.size ?? sizeKey;
 const themeId = () => chatOverride.theme ?? active.theme;
 const skinId = () => chatOverride.skin ?? active.skin;
+const fruitId = () => chatOverride.fruit ?? prefs.fruit;
+const speedId = () => chatOverride.speed ?? prefs.speed;
 const getBest = () => Number(store.get(bestKey(), 0)) || 0;
 
 // ---------- state ----------
@@ -221,7 +223,7 @@ const randomFruit = () => {
 // Fruit kind for a board fruit: fixed choice, or the fruit's own rolled kind when mixed.
 function fruitKind(f) {
   if (f.pair) return pairKind(f.pair);
-  if (prefs.fruit !== MIXED) return prefs.fruit;
+  if (fruitId() !== MIXED) return fruitId();
   if (!f.kind) f.kind = randomFruit();
   return f.kind;
 }
@@ -232,7 +234,7 @@ function pairKind(pair) {
   if (pairKinds.has(pair)) return pairKinds.get(pair);
   const live = new Set([...game.foods.map((f) => f.pair), ...game.jumps.map((j) => j.pair)]);
   const used = new Set([...pairKinds].filter(([p]) => live.has(p)).map(([, k]) => k));
-  let kind = prefs.fruit !== MIXED && !used.has(prefs.fruit) ? prefs.fruit : null;
+  let kind = fruitId() !== MIXED && !used.has(fruitId()) ? fruitId() : null;
   if (!kind) {
     const free = Object.keys(FRUITS).filter((k) => !used.has(k));
     kind = free.length ? free[Math.floor(Math.random() * free.length)] : randomFruit();
@@ -241,7 +243,7 @@ function pairKind(pair) {
   return kind;
 }
 
-const tickMs = () => BASE_TICK_MS * SPEEDS[prefs.speed];
+const tickMs = () => BASE_TICK_MS * SPEEDS[speedId()];
 const SPEED_NAMES = { slow: 'Slow (turtle)', normal: 'Normal (snake)', fast: 'Fast (bunny)' };
 
 const COUNT_NAMES = { one: '1 fruit', three: '3 fruits', five: '5 fruits', ten: '10 fruits', random: 'Random 1–10 fruits' };
@@ -368,7 +370,7 @@ function paintModeIcon(c) {
 
 // Fruit to show in icons: the chosen one, or a varied set when mixed.
 const ICON_MIX = ['apple', 'banana', 'grapes', 'orange', 'strawberry', 'cherries', 'kiwi', 'lemon', 'peach', 'watermelon'];
-const iconFruit = (i) => (prefs.fruit === MIXED ? ICON_MIX[i % ICON_MIX.length] : prefs.fruit);
+const iconFruit = (i) => (fruitId() === MIXED ? ICON_MIX[i % ICON_MIX.length] : fruitId());
 
 function repaintThemedIcons() {
   for (const c of document.querySelectorAll('[data-size-icon]')) paintSizeIcon(c);
@@ -439,8 +441,8 @@ function paintSpeedSnake(c) {
 function paintFruitIcons() {
   const paint = (canvas, size) => {
     const ctx = sizeCanvas(canvas, size, size);
-    if (prefs.fruit === MIXED) drawSprite(ctx, BASKET, 0, 0, size);
-    else drawFruit(ctx, prefs.fruit, 0, 0, size);
+    if (fruitId() === MIXED) drawSprite(ctx, BASKET, 0, 0, size);
+    else drawFruit(ctx, fruitId(), 0, 0, size);
   };
   paint($('score-icon'), 34);
   paint($('stat-fruit'), 48);
@@ -781,7 +783,7 @@ function afterStep(ev, before, wallsBefore) {
     // Yin Yang: the fruit was eaten where the head was, which is now the tail end.
     const at = game.snake[game.snake.length - 1];
     const f = before.find((q) => q.x === at.x && q.y === at.y);
-    eaten.push({ cx: at.x + 0.5, cy: at.y + 0.5, kind: f ? fruitKind(f) : prefs.fruit, t0: performance.now() });
+    eaten.push({ cx: at.x + 0.5, cy: at.y + 0.5, kind: f ? fruitKind(f) : fruitId(), t0: performance.now() });
     // The body jumped ends, so hold it still for this tick instead of interpolating.
     prevSnake = null;
     sfx.flip();
@@ -792,7 +794,7 @@ function afterStep(ev, before, wallsBefore) {
     const f = before.find((q) => !q.fly && q.x === at.x && q.y === at.y);
     // (A win can also come from simply growing into the last square — no fruit then.)
     if (f || ev === 'eat') {
-      eaten.push({ cx: at.x + 0.5, cy: at.y + 0.5, kind: f ? fruitKind(f) : prefs.fruit, t0: performance.now() });
+      eaten.push({ cx: at.x + 0.5, cy: at.y + 0.5, kind: f ? fruitKind(f) : fruitId(), t0: performance.now() });
     }
   }
   portalFruits = null;
@@ -1029,6 +1031,35 @@ const ACTIONS = {
     return `turned the snake ${SKINS[next].name.toLowerCase()}`;
   },
 
+  fruit(arg) {
+    const aliases = { basket: MIXED, mix: MIXED, mixed: MIXED };
+    const next = aliases[arg?.replace(/[^a-z]/g, '')] ?? matchOption(arg, OPTIONS.fruit)
+      ?? pickOther(Object.keys(OPTIONS.fruit), fruitId());
+    if (next === fruitId()) return null;
+    chatOverride.fruit = next;
+    paintFruitIcons();
+    pickSceneFruit();
+    return next === MIXED ? 'mixed up the fruit' : `changed the fruit to ${FRUITS[next].name.toLowerCase()}`;
+  },
+
+  speed(arg) {
+    const aliases = { turtle: 'slow', snake: 'normal', bunny: 'fast', medium: 'normal' };
+    const order = ['slow', 'normal', 'fast'];
+    const current = speedId();
+    const i = order.indexOf(current);
+    let next = aliases[arg] ?? matchOption(arg, SPEEDS);
+    if (arg === 'faster' || arg === 'up') next = order[Math.min(i + 1, order.length - 1)];
+    if (arg === 'slower' || arg === 'down') next = order[Math.max(i - 1, 0)];
+    if (!next) next = pickOther(order, current);
+    if (next === current) return null;
+    // Keep the head at the same point between squares at the new pace.
+    const before = tickMs();
+    chatOverride.speed = next;
+    acc *= tickMs() / before;
+    const label = { slow: 'slowed the snake down', normal: 'set the snake to normal speed', fast: 'sped the snake up' };
+    return label[next];
+  },
+
   mapcolor(arg) {
     const next = matchOption(arg, THEMES) ?? pickOther(Object.keys(THEMES), themeId());
     chatOverride.theme = next;
@@ -1040,11 +1071,13 @@ const ACTIONS = {
 
 function clearChatOverrides() {
   const sizeChanged = chatOverride.size !== null;
-  chatOverride.size = chatOverride.skin = chatOverride.theme = null;
+  const fruitChanged = chatOverride.fruit !== null;
+  for (const k of Object.keys(chatOverride)) chatOverride[k] = null;
   roundPlayed = false;
   applyTheme();
   applySkin();
   repaintThemedIcons();
+  if (fruitChanged) paintFruitIcons();
   if (sizeChanged) newGame();
 }
 
@@ -1117,7 +1150,7 @@ if (new URLSearchParams(location.search).has('debug')) {
 
 // ---------- boot ----------
 function pickSceneFruit() {
-  sceneFruit = prefs.fruit === MIXED ? randomFruit() : prefs.fruit;
+  sceneFruit = fruitId() === MIXED ? randomFruit() : fruitId();
 }
 
 function initIcons() {
