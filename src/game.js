@@ -56,6 +56,9 @@ export const GAME_MODES = {
   shield: { name: 'Shields' },
 };
 
+// Shield mode: chance of a fruit getting 0, 1 or 2 walls.
+export const SHIELD_ODDS = [0.05, 0.65, 0.3];
+
 // Key mode: the shapes keys and locks come in (one pair per shape at a time).
 export const KEY_SHAPES = ['circle', 'triangle', 'square', 'star', 'plus', 'diamond', 'heart', 'moon', 'bolt', 'drop'];
 
@@ -354,7 +357,7 @@ export function spawnKeyPairs(state, n) {
 }
 
 // ---------- shield mode ----------
-// Give a new fruit 0, 1 or 2 walls along its sides. Only sides that face an
+// Give a new fruit 0, 1 or 2 walls along its sides (odds in SHIELD_ODDS). Only sides that face an
 // open square on the board get one (a wall against the edge or a wall block
 // would mean nothing), never a side facing right where the head is about to
 // be, and at least one side facing open, non-fruit ground is always left free
@@ -372,7 +375,9 @@ export function addShields(state, f) {
       nearHead: !!h && Math.abs(c.x - h.x) + Math.abs(c.y - h.y) <= 2,
     };
   });
-  const want = Math.floor(state.rng() * 3);
+  // 5% none, 65% one, 30% two (fewer if the spot doesn't allow it).
+  const roll = state.rng();
+  const want = roll < SHIELD_ODDS[0] ? 0 : roll < SHIELD_ODDS[0] + SHIELD_ODDS[1] ? 1 : 2;
   const options = shuffled(state, sides.filter((x) => x.open && !x.nearHead));
   const chosen = [];
   for (const o of options) {

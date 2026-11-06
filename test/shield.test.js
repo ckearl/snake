@@ -20,7 +20,7 @@ function fruitAhead(g, shields) {
   return g.foods[0];
 }
 
-test('shield mode: every fruit gets 0–2 walls, on sides that face open board', () => {
+test('shield mode: every fruit gets 0–2 walls (mostly one), on sides that face open board', () => {
   const counts = [0, 0, 0];
   for (let seed = 1; seed < 60; seed++) {
     const g = createGame({ cols: 17, rows: 15, mode: 'shield', fruitCount: 5, rng: seeded(seed) });
@@ -36,7 +36,13 @@ test('shield mode: every fruit gets 0–2 walls, on sides that face open board',
       }
     }
   }
-  assert.ok(counts.every((n) => n > 20), `a mix of 0, 1 and 2: ${counts}`);
+  // Odds are 5% / 65% / 30%; a fruit near the edge or the head can't always
+  // take a second wall, so two comes up a bit less than that.
+  const total = counts[0] + counts[1] + counts[2];
+  const share = counts.map((n) => n / total);
+  assert.ok(share[0] < 0.1, `rarely none: ${counts}`);
+  assert.ok(share[1] > 0.55 && share[1] < 0.8, `mostly one: ${counts}`);
+  assert.ok(share[2] > 0.18 && share[2] < 0.35, `sometimes two: ${counts}`);
 });
 
 test('shield mode: there is always an open way in', () => {
