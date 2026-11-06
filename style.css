@@ -524,8 +524,6 @@ svg .fill { fill: currentColor; stroke: none; }
 .blend-tile .blend-name { font-size: 12px; padding-bottom: 5px; }
 .blend-tile[aria-pressed="true"] {
   opacity: 1;
-  background: rgba(255, 255, 255, 0.2);
-  box-shadow: inset 0 0 0 2px var(--accent);
   animation: blend-in 0.22s ease-out;
 }
 .blend-tile:focus-visible { outline: 3px solid rgba(255, 255, 255, 0.55); outline-offset: 2px; }

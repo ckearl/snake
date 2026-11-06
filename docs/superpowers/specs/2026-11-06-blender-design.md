@@ -260,8 +260,8 @@ Calls the design (and the answers above) didn't settle.
 - The blend is saved as its key in `snake.blend` (e.g. `box+key`), with `snake.mode` = `blend`. A saved blend with fewer than two known modes falls back to its one mode (or Classic), so a bad save can't break anything.
 - `state.mode` stays a string: the blend key (`classic`, `box`, `box+key`…), so high scores (`snake.best.<size>.<key>`) and everything that already read `game.mode` keep working. A one-mode blend has exactly today's key.
 - Clicking the blender tile opens the pop-up. Dragging or arrowing onto it when no blend is saved yet also opens it (the row stays where it was until you pick two or more).
-- The pop-up starts from the saved blend, or the row's current mode if there's no blend yet. The choice is applied on Done, Esc, or a click outside.
-- Pop-up look: a 5 × 2 grid of the mode icons with names; chosen ones light up with an accent ring and a small pop. The blender icon is a pixel glass jug of chopped fruit on its base; the count badge sits at its bottom-right.
+- The pop-up opens with nothing picked. The choice is applied on Done, Esc, or a click outside.
+- Pop-up look: a 5 × 2 grid of the mode icons with names; unpicked ones are faded, picked ones show at full strength with a small pop (no border). The blender icon is a pixel glass jug of chopped fruit on its base; the count badge sits at its bottom-right.
 - Shuffle never lands on the blender, and neither does **?**.
 
 **Wrapping**

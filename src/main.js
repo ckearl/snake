@@ -770,6 +770,7 @@ function syncSetting(s, behavior) {
 // Done keeps the choice: none = Classic, one = that mode in the row, two or
 // more = the blender tile, remembering the blend.
 let blendDraft = null; // the modes ticked while the pop-up is open
+let blendTouched = false; // anything tapped since it opened
 const modeSetting = () => SETTINGS.find((s) => s.key === 'mode');
 
 function buildBlender() {
@@ -788,6 +789,7 @@ function buildBlender() {
     b.addEventListener('click', () => {
       if (blendDraft.has(id)) blendDraft.delete(id);
       else blendDraft.add(id);
+      blendTouched = true;
       syncBlender();
     });
     host.append(b);
@@ -796,9 +798,9 @@ function buildBlender() {
 
 function openBlender() {
   if (!el.blender.hidden) return;
-  // Starts from the saved blend, or else the mode picked in the row.
-  const single = BLEND_MODES.includes(prefs.mode) ? [prefs.mode] : [];
-  blendDraft = new Set(blend.length >= 2 ? blend : single);
+  // Starts with nothing picked: tap the modes to put in.
+  blendDraft = new Set();
+  blendTouched = false;
   el.blender.hidden = false;
   syncBlender();
   $('blend-done').focus({ preventScroll: true });
@@ -809,6 +811,12 @@ function closeBlender() {
   el.blender.hidden = true;
   const ids = [...blendDraft].sort();
   const s = modeSetting();
+  // Closed without tapping anything: keep whatever was chosen before.
+  if (!blendTouched) {
+    syncSetting(s, 'smooth');
+    s.track.focus({ preventScroll: true });
+    return;
+  }
   if (ids.length < 2) {
     choose(s, ids[0] ?? 'classic');
   } else {
