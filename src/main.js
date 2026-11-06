@@ -10,7 +10,7 @@ import {
 import { THEMES, SKINS, DEFAULT_THEME, DEFAULT_SKIN, shade, mix, boardAccent } from './themes.js';
 import { FRUITS, DEFAULT_FRUIT, BASKET } from './fruits.js';
 import {
-  BUNNY, TURTLE, WALL_ICON, PORTAL_ICON, MAGNET_ICON, BOX, MINES_ICON, KEY_MODE_ICON, THEME_SPRITES,
+  BUNNY, TURTLE, WALL_ICON, PORTAL_ICON, MAGNET_ICON, BOX, MINES_ICON, THEME_SPRITES,
 } from './critters.js';
 import {
   makeFireworks, drawFireworks, drawDizzyStars, makeConfetti, drawConfetti, CONFETTI_MS, makeBlast, drawBlast,
@@ -406,7 +406,7 @@ function modeIcon(id) {
 // Classic: a tiny board with a snake heading for a fruit. The other modes are
 // simple pixel sprites: a brick wall, two offset portals.
 const MODE_SPRITES = {
-  wall: WALL_ICON, portal: PORTAL_ICON, magnet: MAGNET_ICON, box: BOX, mines: MINES_ICON, key: KEY_MODE_ICON,
+  wall: WALL_ICON, portal: PORTAL_ICON, magnet: MAGNET_ICON, box: BOX, mines: MINES_ICON,
 };
 function paintModeIcon(c) {
   const id = c.dataset.modeIcon;
@@ -419,6 +419,18 @@ function paintModeIcon(c) {
     // A poisoned fruit, bubbling.
     drawFruit(ctx, iconFruit(0), 6, 9, 33, { poison: true });
     drawPoisonBubbles(ctx, 22.5, 25, 33, 500);
+    return;
+  }
+  if (id === 'key') {
+    // A grey lock with a star on it, and its star key (in the board accent) above.
+    ctx.save();
+    ctx.translate(3, 15);
+    drawLock(ctx, 'star', 0, 0, 27);
+    ctx.restore();
+    ctx.save();
+    ctx.translate(20, 0);
+    drawKey(ctx, 'star', 0, 0, 24);
+    ctx.restore();
     return;
   }
   if (id === 'shield') {

@@ -1,7 +1,7 @@
 // Canvas drawing: board, snake, and pixel sprites. No game rules here.
 import { SKINS, DEFAULT_SKIN, skinColor, shade, mix } from './themes.js';
 import { FRUITS, DEFAULT_FRUIT } from './fruits.js';
-import { BOX, FLAG, KEY_COLORS, shapeSprite } from './critters.js';
+import { BOX, FLAG, shapeSprite } from './critters.js';
 
 export const PALETTE = {
   cellA: '#B4D0F9',
@@ -191,13 +191,14 @@ export function drawWall(ctx, x, y, cell, scale = 1) {
 }
 
 // ---------- key mode ----------
+// Keys are all one colour: the board accent (the theme's complementary hue,
+// like mine fields and box targets), so they stand out on any board.
 const keyCache = new Map();
 function keySprite(shape) {
-  if (!keyCache.has(shape)) {
-    const c = KEY_COLORS[shape] ?? '#FFFFFF';
-    keyCache.set(shape, shapeSprite(shape, c, mix(c, '#FFFFFF', 0.45), shade(c, -0.25), shade(c, -0.62)));
-  }
-  return keyCache.get(shape);
+  const c = PALETTE.accent;
+  const id = `${shape}|${c}`;
+  if (!keyCache.has(id)) keyCache.set(id, shapeSprite(shape, c, mix(c, '#FFFFFF', 0.45), shade(c, -0.25), shade(c, -0.62)));
+  return keyCache.get(id);
 }
 const lockCache = new Map();
 function lockSymbol(shape) {
@@ -205,7 +206,7 @@ function lockSymbol(shape) {
   return lockCache.get(shape);
 }
 
-// A key: its shape in its colour, sitting in its square (lift raises it off its shadow).
+// A key: its shape in the accent colour, sitting in its square (lift raises it off its shadow).
 export function drawKey(ctx, shape, x, y, cell, { scale = 1, lift = 0 } = {}) {
   const size = cell * 0.98 * scale;
   drawSprite(ctx, keySprite(shape), (x + 0.5) * cell - size / 2, (y + 0.5) * cell - size / 2, size, { shadow: true, lift });
