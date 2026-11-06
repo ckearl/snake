@@ -251,20 +251,6 @@ svg .fill { fill: currentColor; stroke: none; }
 .setting { position: relative; }
 .setting + .setting { margin-top: 2px; }
 
-/* The centre frame: whatever icon rests here is the chosen value. */
-.setting::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 70px;
-  height: 70px;
-  transform: translate(-50%, -50%);
-  border: 3px solid var(--accent);
-  border-radius: 16px;
-  pointer-events: none;
-}
-
 .track {
   position: relative;
   display: flex;
@@ -281,7 +267,8 @@ svg .fill { fill: currentColor; stroke: none; }
 }
 .track::-webkit-scrollbar { display: none; }
 .track.dragging { cursor: grabbing; scroll-snap-type: none; }
-.setting:has(.track:focus-visible)::after { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.55); }
+/* Keyboard focus on a row: a soft ring around its chosen (centred) icon. */
+.track:focus-visible .tile[aria-selected="true"] { outline: 3px solid rgba(255, 255, 255, 0.55); outline-offset: 3px; }
 
 .tile {
   flex: none;
