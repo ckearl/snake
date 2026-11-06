@@ -190,7 +190,6 @@ function setHint(text, center = false, variant = null) {
   el.hint.textContent = text ?? '';
   el.hint.classList.toggle('center', center);
   el.hint.classList.toggle('win', variant === 'win');
-  el.hint.classList.toggle('again', variant === 'again');
 }
 
 function updateScore() {
@@ -1047,7 +1046,6 @@ function onGameEnd(ev) {
     if (game.blast) sfx.boom();
     else sfx.die();
     endFx = { type: 'lose', t0, blast: game.blast && makeBlast(game.blast.x + 0.5, game.blast.y + 0.5) };
-    setHint('Space to play again', false, 'again');
     deathTimer = setTimeout(() => showScreen('menu'), DEATH_TO_MENU_MS);
   } else {
     sfx.win();
