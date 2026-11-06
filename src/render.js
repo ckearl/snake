@@ -432,7 +432,7 @@ function tubeRect(ctx, a, b, w, capA, capB, cell, ox = 0, oy = 0) {
 // eyes: 'normal' | 'closed' | 'dizzy' (pupils spin) | 'happy' (^ ^). ms drives the spin.
 export function drawSnakePath(ctx, rawPts, cell, {
   dir = 'right', dead = false, eyes = dead ? 'closed' : 'normal', ms = 0,
-  tongue = false, skin = null, shadow = true, mouth = 0, strain = false,
+  tongue = false, skin = null, shadow = true, mouth = 0, strain = false, twin = false,
 } = {}) {
   // Split into runs at null breaks (portals), dropping zero-length steps.
   const runs = [];
@@ -451,7 +451,9 @@ export function drawSnakePath(ctx, rawPts, cell, {
   const sk = skin ?? currentSkin;
   const lens = runs.map(pathLength);
   const L = lens.reduce((a, b) => a + b, 0);
-  const colorAt = (d) => skinColor(sk, L > 0 ? d / L : 0);
+  // twin: a head at both ends (the Twin mode icon) – no tail, and the colour
+  // runs head → tail → head.
+  const colorAt = (d) => skinColor(sk, L > 0 ? (twin ? 1 - Math.abs(2 * d / L - 1) : d / L) : 0);
   const border = Math.max(2, Math.round(cell * 0.08));
   const wide = BODY_W * cell;
   const thin = TAIL_W * cell;
@@ -479,7 +481,9 @@ export function drawSnakePath(ctx, rawPts, cell, {
   let off = 0;
   runs.forEach((run, r) => {
     const start = r === 0 ? wide / 2 : 0;
-    if (r === runs.length - 1) {
+    if (r === runs.length - 1 && twin) {
+      addRun(run, wide, off, start, wide / 2);
+    } else if (r === runs.length - 1) {
       const split = Math.max(0, lens[r] - TAIL_LEN);
       addRun(subPath(run, 0, split), wide, off, start, 0);
       addRun(subPath(run, split, lens[r]), thin, off + split, split > 0 ? thin / 2 : start, thin / 2);
@@ -502,11 +506,22 @@ export function drawSnakePath(ctx, rawPts, cell, {
   const hy = Math.round(h.y * cell - hs / 2);
   const hsz = Math.round(hs);
 
+  // The second head of a twin, facing out of the far end.
+  let tw = null;
+  if (twin) {
+    const last = runs[runs.length - 1];
+    const e = last[last.length - 1];
+    const q = last[last.length - 2] ?? e;
+    const tdir = Math.abs(e.x - q.x) > Math.abs(e.y - q.y) ? (e.x > q.x ? 'right' : 'left') : (e.y > q.y ? 'down' : 'up');
+    tw = { p: e, dir: tdir, x: Math.round(e.x * cell - hs / 2), y: Math.round(e.y * cell - hs / 2) };
+  }
+
   if (shadow) {
     ctx.fillStyle = PALETTE.shadow;
     const sh = Math.max(2, Math.round(cell * 0.08));
     for (const p of pieces) tubeRect(ctx, p.a, p.b, p.w, p.capA, p.capB, cell, 0, sh);
     ctx.fillRect(hx, hy + sh, hsz, hsz);
+    if (tw) ctx.fillRect(tw.x, tw.y + sh, hsz, hsz);
   }
   for (const p of pieces) {
     ctx.fillStyle = shade(colorAt(p.mid), -0.42);
@@ -526,6 +541,13 @@ export function drawSnakePath(ctx, rawPts, cell, {
   drawHead(ctx, h.x * cell, h.y * cell, cell, dir, {
     eyes: strain && eyes === 'normal' ? 'strain' : eyes, ms, tongue: tongue && eyes === 'normal' && !strain, ring, mouth,
   });
+  if (tw) {
+    ctx.fillStyle = ring;
+    ctx.fillRect(tw.x, tw.y, hsz, hsz);
+    ctx.fillStyle = headCol;
+    ctx.fillRect(tw.x + border, tw.y + border, hsz - border * 2, hsz - border * 2);
+    drawHead(ctx, tw.p.x * cell, tw.p.y * cell, cell, tw.dir, { eyes, ms, tongue: false, ring });
+  }
 }
 
 // Tail tip disappearing into the head's mouth: a dark lip line across the joint.

@@ -239,9 +239,9 @@ test('winged mode: stepping onto a fruit square does not eat (only touching does
   assert.equal(g.snake[0].x, h.x + 1);
 });
 
-// ---------- yin yang ----------
-test('yin yang mode: eating flips the snake — tail becomes head, direction reverses', () => {
-  const g = running({ mode: 'yinyang', cols: 10, rows: 9 });
+// ---------- twin ----------
+test('twin mode: eating flips the snake — tail becomes head, direction reverses', () => {
+  const g = running({ mode: 'twin', cols: 10, rows: 9 });
   g.snake = [{ x: 5, y: 4 }, { x: 4, y: 4 }, { x: 3, y: 4 }, { x: 3, y: 5 }];
   g.dir = 'right';
   g.foods = [{ x: 6, y: 4 }];
@@ -254,8 +254,8 @@ test('yin yang mode: eating flips the snake — tail becomes head, direction rev
   assert.deepEqual(g.snake[0], { x: 3, y: 6 });
 });
 
-test('yin yang mode: a straight snake flips to head straight back', () => {
-  const g = running({ mode: 'yinyang', cols: 10, rows: 9 });
+test('twin mode: a straight snake flips to head straight back', () => {
+  const g = running({ mode: 'twin', cols: 10, rows: 9 });
   g.snake = [{ x: 5, y: 4 }, { x: 4, y: 4 }, { x: 3, y: 4 }];
   g.dir = 'right';
   g.foods = [{ x: 6, y: 4 }];

@@ -65,30 +65,6 @@ export const PORTAL_ICON = sprite(14, 14, (px) => {
   ring(9.8, 8.8, '#B46CFF', '#E3C6FF');
 });
 
-// Yin Yang: the two-tone circle.
-export const YINYANG_ICON = sprite(14, 14, (px) => {
-  const LIGHT = '#F4F1EA';
-  const DARK = '#1E1A2E';
-  const cx = 7;
-  const cy = 7;
-  for (let y = 0; y < 14; y++) {
-    for (let x = 0; x < 14; x++) {
-      const X = x + 0.5;
-      const Y = y + 0.5;
-      if (Math.hypot(X - cx, Y - cy) > 6.4) continue;
-      const top = Math.hypot(X - cx, Y - (cy - 3.2));
-      const bot = Math.hypot(X - cx, Y - (cy + 3.2));
-      let c = X > cx ? DARK : LIGHT;
-      if (top < 3.2) c = LIGHT;
-      if (bot < 3.2) c = DARK;
-      if (top < 1.1) c = DARK; // dots
-      if (bot < 1.1) c = LIGHT;
-      px[y][x] = c;
-    }
-  }
-  outline(px, '#8C95A8');
-});
-
 // Magnet: a horseshoe magnet with silver tips.
 export const MAGNET_ICON = sprite(14, 13, (px) => {
   map(px, [

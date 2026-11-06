@@ -25,7 +25,7 @@ export const FRUIT_COUNTS = { one: 1, three: 3, five: 5, ten: 10, random: 'rando
 //            twin, the body following through until the tail has passed.
 //  winged  – fruits fly freely around the board, bouncing off the edges and the
 //            snake's body.
-//  yinyang – eating a fruit flips the snake: the tail becomes the head and it
+//  twin – eating a fruit flips the snake: the tail becomes the head and it
 //            heads off the way the old tail was pointing.
 //  magnet  – fruits fly like winged mode but steer toward the snake's head.
 //  box     – the fruit is shut in a box: push it (head first) onto its target
@@ -41,7 +41,7 @@ export const GAME_MODES = {
   wall: { name: 'Walls' },
   portal: { name: 'Portals' },
   winged: { name: 'Winged' },
-  yinyang: { name: 'Yin Yang' },
+  twin: { name: 'Twin' },
   magnet: { name: 'Magnet' },
   box: { name: 'Box' },
   poison: { name: 'Poison' },
@@ -237,14 +237,14 @@ export function step(state) {
   // Modes that need room for their next thing (a box and its target) are won
   // once there isn't any.
   if (!eatenFood.bonus && !refill(state, eatenFood)) return win(state);
-  if (state.mode === 'yinyang') {
+  if (state.mode === 'twin') {
     flip(state);
     return 'flip';
   }
   return jump ? 'portal' : 'eat';
 }
 
-// Yin Yang: reverse the snake. The old tail becomes the head, moving away from
+// Twin: reverse the snake. The old tail becomes the head, moving away from
 // the body (the way the tail was pointing). Pending turns are dropped.
 export function flip(state) {
   const S = state.snake.reverse();

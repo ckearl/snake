@@ -11,7 +11,7 @@ function running(opts) {
 }
 
 test('!wall: a wall can be added in any mode', () => {
-  for (const mode of ['classic', 'portal', 'winged', 'yinyang']) {
+  for (const mode of ['classic', 'portal', 'winged', 'twin']) {
     const g = running({ mode });
     assert.ok(spawnWall(g), mode);
     assert.equal(g.walls.length, 1);

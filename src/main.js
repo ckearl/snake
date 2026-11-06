@@ -10,7 +10,7 @@ import {
 import { THEMES, SKINS, DEFAULT_THEME, DEFAULT_SKIN, shade, mix, boardAccent } from './themes.js';
 import { FRUITS, DEFAULT_FRUIT, BASKET } from './fruits.js';
 import {
-  BUNNY, TURTLE, WALL_ICON, PORTAL_ICON, YINYANG_ICON, MAGNET_ICON, BOX, MINES_ICON, THEME_SPRITES,
+  BUNNY, TURTLE, WALL_ICON, PORTAL_ICON, MAGNET_ICON, BOX, MINES_ICON, THEME_SPRITES,
 } from './critters.js';
 import {
   makeFireworks, drawFireworks, drawDizzyStars, makeConfetti, drawConfetti, CONFETTI_MS, makeBlast, drawBlast,
@@ -87,6 +87,12 @@ const themeId = () => chatOverride.theme ?? active.theme;
 const skinId = () => chatOverride.skin ?? active.skin;
 const fruitId = () => chatOverride.fruit ?? prefs.fruit;
 const speedId = () => chatOverride.speed ?? prefs.speed;
+// Yin Yang mode was renamed Twin: carry over a saved choice and its high scores.
+if (store.get('snake.mode') === 'yinyang') store.set('snake.mode', 'twin');
+for (const size of Object.keys(BOARD_SIZES)) {
+  const old = store.get(`snake.best.${size}.yinyang`, null);
+  if (old !== null && store.get(`snake.best.${size}.twin`, null) === null) store.set(`snake.best.${size}.twin`, old);
+}
 const getBest = () => Number(store.get(bestKey(), 0)) || 0;
 
 // ---------- state ----------
@@ -396,7 +402,7 @@ function modeIcon(id) {
 // Classic: a tiny board with a snake heading for a fruit. The other modes are
 // simple pixel sprites: a brick wall, two offset portals.
 const MODE_SPRITES = {
-  wall: WALL_ICON, portal: PORTAL_ICON, yinyang: YINYANG_ICON, magnet: MAGNET_ICON, box: BOX, mines: MINES_ICON,
+  wall: WALL_ICON, portal: PORTAL_ICON, magnet: MAGNET_ICON, box: BOX, mines: MINES_ICON,
 };
 function paintModeIcon(c) {
   const id = c.dataset.modeIcon;
@@ -409,6 +415,12 @@ function paintModeIcon(c) {
     // A poisoned fruit, bubbling.
     drawFruit(ctx, iconFruit(0), 6, 9, 33, { poison: true });
     drawPoisonBubbles(ctx, 22.5, 25, 33, 500);
+    return;
+  }
+  if (id === 'twin') {
+    // A snake with a head at each end, in the current skin.
+    drawSnake(ctx, [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 1, y: 2 }, { x: 2, y: 2 }],
+      15, { dir: 'left', shadow: false, twin: true });
     return;
   }
   if (id === 'winged') {
@@ -956,7 +968,7 @@ function afterStep(ev, before, wallsBefore) {
     sfx.cure();
   }
   if (ev === 'flip') {
-    // Yin Yang: the fruit was eaten where the head was, which is now the tail end.
+    // Twin: the fruit was eaten where the head was, which is now the tail end.
     const at = game.snake[game.snake.length - 1];
     const f = before.find((q) => q.x === at.x && q.y === at.y);
     eaten.push({ cx: at.x + 0.5, cy: at.y + 0.5, kind: f ? fruitKind(f) : fruitId(), t0: performance.now() });
