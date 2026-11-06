@@ -27,8 +27,6 @@ const BONK_MS = 220;
 // Space / Enter right after a game ends starts the next one. Ignored for this
 // long so a key already on its way down (e.g. Space to pause) doesn't count.
 const RESTART_GUARD_MS = 150;
-// Hold R this long to throw away the current game and start again.
-const HOLD_RESTART_MS = 600;
 // Hopeful turning: a turn pressed within this fraction of a square after the head
 // passes a square's centre still turns at that square.
 const LATE_TURN_WINDOW = 0.1;
@@ -100,7 +98,6 @@ let game = null;
 let screen = 'menu'; // menu | settings | play
 let lastScore = 0;
 let startBest = 0; // the high score for this game's mode when it began
-let rHeldAt = null; // when R went down (hold to restart)
 let recordShown = false; // this game has already had its new-record moment
 let cell = 32;
 let boardCtx = null;
@@ -160,7 +157,6 @@ function newGame() {
 function showScreen(name) {
   screen = name;
   clearTimeout(deathTimer);
-  if (name !== 'play') rHeldAt = null;
   el.menu.hidden = name !== 'menu';
   el.settings.hidden = name !== 'settings';
   el.stream.hidden = name !== 'stream';
@@ -857,13 +853,6 @@ function drawGame(t) {
 
   confetti = confetti.filter((c) => t - c.t0 < CONFETTI_MS);
   for (const c of confetti) drawConfetti(ctx, c.pieces, t - c.t0, cell);
-
-  // Holding R: the board dims as the restart winds up.
-  if (rHeldAt !== null) {
-    const k = Math.min(1, (t - rHeldAt) / HOLD_RESTART_MS);
-    ctx.fillStyle = `rgba(0, 0, 0, ${0.45 * k * k})`;
-    ctx.fillRect(0, 0, game.cols * cell, game.rows * cell);
-  }
 }
 
 // Fruit waiting on the board gives a little hop now and then (each on its own
@@ -1142,10 +1131,6 @@ function frame(t) {
     if (game.status === 'running' && game.foods.some((f) => f.fly)) flyFruits(dt / 1000, t);
   }
 
-  if (rHeldAt !== null && t - rHeldAt >= HOLD_RESTART_MS) {
-    rHeldAt = null;
-    restart();
-  }
   drawGame(t);
   if (screen === 'menu') drawMenuScene(t);
   requestAnimationFrame(frame);
@@ -1232,8 +1217,9 @@ window.addEventListener('keydown', (e) => {
   }
   if (screen !== 'play' || !game) return;
 
+  // R: straight back to the start of a fresh game.
   if (e.code === 'KeyR' && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) {
-    rHeldAt = performance.now();
+    restart();
     return;
   }
 
@@ -1280,12 +1266,7 @@ window.addEventListener('keydown', (e) => {
 });
 
 // Auto-pause if the window loses focus mid-game.
-window.addEventListener('keyup', (e) => {
-  if (e.code === 'KeyR') rHeldAt = null;
-});
-
 window.addEventListener('blur', () => {
-  rHeldAt = null;
   if (game?.status === 'running') pause();
 });
 
