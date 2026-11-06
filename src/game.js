@@ -198,6 +198,10 @@ export function step(state) {
   let flyJump = null;
   const port = caught.find((f) => f.pair);
   const portTwin = port && state.foods.find((o) => o !== port && o.pair === port.pair);
+  // (Caught two pairs at once: the head goes through the first; the other
+  // pair's twin goes too, its fruit eaten all the same.)
+  const spent = new Set(caught.filter((f) => f.pair).map((f) => f.pair));
+  state.foods = state.foods.filter((o) => o === portTwin || !spent.has(o.pair));
   if (portTwin) {
     state.foods = state.foods.filter((o) => o !== portTwin);
     const exit = exitSquare(state, portTwin);
@@ -336,11 +340,18 @@ function onEat(state, food, ev) {
 }
 
 // Where the head comes out of a flying portal fruit's twin: the square under its
-// centre, or the nearest open square to it. Null if there's nowhere.
+// centre, or the nearest open square to it (it may be inside a mine field: that
+// counts as a visit). Null if there's nowhere.
 function exitSquare(state, twin) {
   const c = { x: Math.floor(twin.x), y: Math.floor(twin.y) };
   const taken = takenCells(state);
   for (const m of state.mines) taken.add(m.y * state.cols + m.x);
+  // Never out into the field the head is in when that move would set it off.
+  const v = state.mineVisit;
+  const field = v && v.n + 1 >= MINE_LIMIT && state.mines.find((m) => m.id === v.id);
+  if (field) {
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) taken.add((field.y + dy) * state.cols + field.x + dx);
+  }
   let best = null;
   let bestD = Infinity;
   for (let y = 0; y < state.rows; y++) {
@@ -539,12 +550,12 @@ export function spawnKeyPair(state, { bonus = false, pick = null, box = false, p
   const cells = shuffled(state, freeCells(state).map((i) => ({ x: i % state.cols, y: Math.floor(i / state.cols) })))
     .filter((c) => !h || cheb(c, h) >= SPAWN_CLEARANCE);
   const ring = box && new Set(boxSpots(state).map((c) => c.y * state.cols + c.x));
-  const lock = cells.find((c) => (!ring || ring.has(c.y * state.cols + c.x)) && keepsBoardOpen(state, c));
+  const lock = cells.find((c) => (!ring || ring.has(c.y * state.cols + c.x)) && staysOpen(state, c));
   if (!lock) return false;
   let lock2 = null;
   if (portal) {
     state.locks.push(lock); // (so the second lock can't wall anything off with it)
-    lock2 = cells.find((c) => !same(c, lock) && keepsBoardOpen(state, c));
+    lock2 = cells.find((c) => !same(c, lock) && staysOpen(state, c));
     state.locks.pop();
     if (!lock2) return false;
   }
@@ -668,6 +679,7 @@ function boxSpots(state) {
   for (let y = 1; y < rows - 1; y++) {
     for (let x = 1; x < cols - 1; x++) {
       if (h && cheb(h, { x, y }) < SPAWN_CLEARANCE) continue;
+      if (state.mines.some((m) => m.x === x && m.y === y)) continue; // never on a flag
       let clear = true;
       for (let dy = -1; dy <= 1 && clear; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
@@ -775,13 +787,10 @@ export function updateFlyers(state, dt, head = null) {
     for (let k = 0; k < n; k++) {
       f.x += f.vx * sdt;
       f.y += f.vy * sdt;
-      // Board edges
-      if (f.x < r) { f.x = r; f.vx = Math.abs(f.vx); }
-      if (f.x > state.cols - r) { f.x = state.cols - r; f.vx = -Math.abs(f.vx); }
-      if (f.y < r) { f.y = r; f.vy = Math.abs(f.vy); }
-      if (f.y > state.rows - r) { f.y = state.rows - r; f.vy = -Math.abs(f.vy); }
       // Snake body / walls: circle vs square
       for (const c of obstacles) bounceOffCell(f, c, r);
+      // Board edges (last, so a bounce off a block by the edge can't push it off)
+      bounceOffEdges(state, f, r);
     }
   }
 
@@ -801,6 +810,7 @@ export function updateFlyers(state, dt, head = null) {
         return [];
       }
       bounceOffCell(f, { x: h.x - 0.5, y: h.y - 0.5 }, r);
+      bounceOffEdges(state, f, r);
       continue;
     }
     // Both ends of a portal pair at once count as one.
@@ -836,6 +846,13 @@ function flyerSide(f, h) {
   const dy = h.y - f.y;
   if (Math.abs(dx) >= Math.abs(dy)) return dx > 0 ? 'right' : 'left';
   return dy > 0 ? 'down' : 'up';
+}
+
+function bounceOffEdges(state, f, r) {
+  if (f.x < r) { f.x = r; f.vx = Math.abs(f.vx); }
+  if (f.x > state.cols - r) { f.x = state.cols - r; f.vx = -Math.abs(f.vx); }
+  if (f.y < r) { f.y = r; f.vy = Math.abs(f.vy); }
+  if (f.y > state.rows - r) { f.y = state.rows - r; f.vy = -Math.abs(f.vy); }
 }
 
 function bounceOffCell(f, c, r) {
@@ -1110,6 +1127,20 @@ function moveSafety(state, k) {
   const sim = { snake: state.snake, grow: state.grow, visit: state.mineVisit };
   const fruit = new Map(state.foods.filter((f) => !f.fly).map((f) => [f.y * state.cols + f.x, f]));
   const blocked = wallGrid(state);
+  // Last resorts, better than certain death but worse than anything else: going
+  // into a portal, eating a key, pushing a box (anywhere but into the body).
+  const d = DIRECTIONS[k];
+  const h0 = state.snake[0];
+  const c = { x: h0.x + d.x, y: h0.y + d.y };
+  if (inBounds(state, c)) {
+    const ahead = fruit.get(c.y * state.cols + c.x);
+    if (ahead?.pair) return ahead.shields?.includes(OPPOSITE[k]) ? 0 : 1;
+    if (state.keys.some((q) => same(q, c))) return 1;
+    if (state.boxes.some((q) => same(q, c))) {
+      const dest = { x: c.x + d.x, y: c.y + d.y };
+      return state.snake.slice(0, -1).some((q) => same(q, dest)) ? 0 : 1;
+    }
+  }
   const next = simMove(state, sim, k, blocked, fruit);
   if (!next) return 0;
   let level = 1;
@@ -1128,7 +1159,8 @@ const LOOKAHEAD_BUDGET = 300; // positions checked per candidate move
 
 // Squares the poison wander treats as solid: wall blocks, locks, mine flags,
 // boxes (it never tries to push one), keys (it never opens a lock on its own)
-// and portal fruit (it never jumps somewhere it can't see). `g.field` maps each
+// and portal fruit (it only jumps somewhere it can't see when there's no other
+// way; see moveSafety). `g.field` maps each
 // square inside a mine field to that field's id, so the wander can count its
 // moves in there.
 function wallGrid(state) {
@@ -1477,6 +1509,16 @@ export function placeFood(state, extraBlocked = []) {
   return { x: idx % state.cols, y: Math.floor(idx / state.cols) };
 }
 
+// A new wall or lock at `c` keeps the board open with every lock shut, with
+// them all open, and with each one open on its own: so opening a lock later
+// can never leave a dead end behind it.
+function staysOpen(state, c) {
+  if (!keepsBoardOpen(state, c)) return false;
+  if (!state.locks.length) return true;
+  if (!keepsBoardOpen(state, c, state.locks)) return false;
+  return state.locks.every((l) => keepsBoardOpen(state, c, [l]));
+}
+
 // Wall mode: a block on a free square that
 //  - is never one of the two squares straight ahead of the head, and
 //  - keeps the board winnable: every open square (anything that isn't a wall,
@@ -1495,7 +1537,7 @@ export function spawnWall(state) {
   }
   for (const idx of order) {
     const w = { x: idx % state.cols, y: Math.floor(idx / state.cols) };
-    if (keepsBoardOpen(state, w)) {
+    if (staysOpen(state, w)) {
       state.walls.push(w);
       return w;
     }
@@ -1503,22 +1545,23 @@ export function spawnWall(state) {
   return null;
 }
 
-export function keepsBoardOpen(state, extraWall) {
+// `open`: locks to treat as already opened (they won't be solid for ever).
+export function keepsBoardOpen(state, extraWall, open = []) {
   const { cols, rows } = state;
   const blocked = new Uint8Array(cols * rows);
-  for (const w of [...state.walls, ...state.locks]) blocked[w.y * cols + w.x] = 1;
+  for (const w of [...state.walls, ...state.locks.filter((l) => !open.includes(l))]) blocked[w.y * cols + w.x] = 1;
   if (extraWall) blocked[extraWall.y * cols + extraWall.x] = 1;
-  const open = (x, y) => x >= 0 && y >= 0 && x < cols && y < rows && !blocked[y * cols + x];
+  const isOpen = (x, y) => x >= 0 && y >= 0 && x < cols && y < rows && !blocked[y * cols + x];
   const NB = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
   let total = 0;
   let start = -1;
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
-      if (!open(x, y)) continue;
+      if (!isOpen(x, y)) continue;
       total++;
       start = y * cols + x;
-      if (NB.filter(([dx, dy]) => open(x + dx, y + dy)).length < 2) return false; // dead end
+      if (NB.filter(([dx, dy]) => isOpen(x + dx, y + dy)).length < 2) return false; // dead end
     }
   }
   if (!total) return false;
@@ -1536,7 +1579,7 @@ export function keepsBoardOpen(state, extraWall) {
       const nx = x + dx;
       const ny = y + dy;
       const j = ny * cols + nx;
-      if (open(nx, ny) && !seen[j]) {
+      if (isOpen(nx, ny) && !seen[j]) {
         seen[j] = 1;
         stack.push(j);
       }
