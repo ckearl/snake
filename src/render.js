@@ -145,7 +145,8 @@ export function drawPoisonBubbles(ctx, cx, cy, size, ms, seed = 0) {
 }
 
 // Draw any sprite centred in a size×size box, keeping its aspect ratio.
-export function drawSprite(ctx, sprite, x, y, size, { shadow = false } = {}) {
+// lift: px the sprite is raised off the ground (its shadow stays put and shrinks).
+export function drawSprite(ctx, sprite, x, y, size, { shadow = false, lift = 0 } = {}) {
   const h = sprite.length;
   const w = sprite[0].length;
   const scale = size / Math.max(w, h);
@@ -156,10 +157,11 @@ export function drawSprite(ctx, sprite, x, y, size, { shadow = false } = {}) {
   if (shadow) {
     ctx.fillStyle = PALETTE.shadow;
     ctx.beginPath();
-    ctx.ellipse(x + size / 2, by + bh * 0.97, bw * 0.36, size * 0.09, 0, 0, Math.PI * 2);
+    const k = 1 - Math.min(0.4, lift / size);
+    ctx.ellipse(x + size / 2, by + bh * 0.97, bw * 0.36 * k, size * 0.09 * k, 0, 0, Math.PI * 2);
     ctx.fill();
   }
-  blit(ctx, sprite, bx, by, bw, bh);
+  blit(ctx, sprite, bx, Math.round(by - lift), bw, bh);
 }
 
 export function drawCrown(ctx, x, y, size) {

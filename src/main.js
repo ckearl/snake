@@ -743,7 +743,8 @@ function drawGame(t) {
     const cx = flying ? f.x * cell : (f.x + 0.5) * cell;
     const cy = flying ? f.y * cell : (f.y + 0.5) * cell;
     if (f.fly === 'winged') drawWings(ctx, cx, cy, size, Math.floor((t + (f.id ?? 0) * 97) / 130) % 2 === 0);
-    drawFruit(ctx, fruitKind(f), cx - size / 2, cy - size / 2 - cell * 0.03, size, { shadow: !flying, poison: f.poison });
+    const lift = flying ? 0 : fruitHop(t, f.id ?? f.x * 31 + f.y);
+    drawFruit(ctx, fruitKind(f), cx - size / 2, cy - size / 2 - cell * 0.03, size, { shadow: !flying, poison: f.poison, lift });
     if (f.poison) drawPoisonBubbles(ctx, cx, cy, size, t, f.id ?? 0);
   }
   for (const key of foodBorn.keys()) if (!onBoard.has(key)) foodBorn.delete(key);
@@ -795,6 +796,15 @@ function drawGame(t) {
 
   confetti = confetti.filter((c) => t - c.t0 < CONFETTI_MS);
   for (const c of confetti) drawConfetti(ctx, c.pieces, t - c.t0, cell);
+}
+
+// Fruit waiting on the board gives a little hop now and then (each on its own
+// beat), then sits still. Returns how high it is off the ground, in px.
+const HOP_MS = 1500;
+function fruitHop(t, id) {
+  const p = ((t + id * 337) % HOP_MS) / HOP_MS;
+  if (p >= 0.3) return 0;
+  return Math.sin((Math.PI * p) / 0.3) * cell * 0.08;
 }
 
 // Box mode crates. A pushed box slides along with the head; a released one
