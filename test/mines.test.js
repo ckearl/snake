@@ -71,6 +71,15 @@ test('mines mode: a field may lie over the snake’s body, but never its flag', 
 test('mines mode: running into the flag is a death', () => {
   const g = withField(8, 7);
   assert.equal(step(g), 'die');
+  assert.deepEqual(g.blast, { x: 8, y: 7, id: 77 }, 'the field goes off');
+  assert.equal(g.mines.length, 0);
+});
+
+test('mines mode: other deaths are a plain bonk, not a blast', () => {
+  const g = withField(12, 12);
+  g.walls = [{ x: 8, y: 7 }];
+  assert.equal(step(g), 'die');
+  assert.equal(g.blast, null);
 });
 
 test('mines mode: dipping in and out within 3 moves clears the field', () => {
@@ -101,6 +110,7 @@ test(`mines mode: ${MINE_LIMIT} moves inside is a death`, () => {
   step(g); // (10,7) 3
   queueTurn(g, 'up');
   assert.equal(step(g), 'die'); // (10,6) 4
+  assert.deepEqual(g.blast, { x: 9, y: 6, id: 77 });
 });
 
 test('mines mode: the body inside a field doesn’t count, only the head', () => {

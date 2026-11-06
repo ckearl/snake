@@ -98,6 +98,7 @@ export function createGame({ cols, rows, fruitCount = 1, mode = 'classic', rng =
     pushing: false, // box mode: the last step pushed a box
     poison: 0, // poison mode: moves left before the player gets control back
     mines: [], // mines mode: { x, y, id } – flag square; the field is the 3×3 around it
+    blast: null, // { x, y, id }: the mine field that went off (mines mode death)
     mineVisit: null, // { id, n }: the field the head is in and how many moves it's been there
     cleared: [], // fields cleared by the last step (for the confetti)
     jumps: [], // portal mode: open portals { from, to, pair } while the body passes through
@@ -156,7 +157,8 @@ export function step(state) {
 
   if (!inBounds(state, next)) return die(state);
   if (state.walls.some((w) => same(w, next))) return die(state);
-  if (state.mines.some((m) => same(m, next))) return die(state); // the flag
+  const flag = state.mines.find((m) => same(m, next));
+  if (flag) return explode(state, flag);
 
   // Flying fruits are caught continuously (updateFlyers), not by stepping onto a square.
   const eatIdx = state.foods.findIndex((f) => !f.fly && same(f, next));
@@ -200,7 +202,9 @@ export function step(state) {
   }
   if (leavingExit && !eating) state.leftExit = { exit: { x: head.x, y: head.y } };
   pruneJumps(state);
-  if (state.mines.length && !trackMines(state)) return die(state);
+  if (state.mines.length && !trackMines(state)) {
+    return explode(state, state.mines.find((m) => m.id === state.mineVisit.id));
+  }
   if (!eating) {
     if (occupiedCount(state) >= state.cols * state.rows) return win(state);
     if (push === 'bump') {
@@ -513,6 +517,14 @@ export function redirectExit(state, dir) {
 function die(state) {
   state.status = 'over';
   return 'die';
+}
+
+// Mines mode death: the field goes off. It's taken off the board and kept in
+// state.blast so the explosion can be drawn there.
+function explode(state, mine) {
+  state.mines = state.mines.filter((m) => m !== mine);
+  state.blast = { x: mine.x, y: mine.y, id: mine.id };
+  return die(state);
 }
 
 function win(state) {

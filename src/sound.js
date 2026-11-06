@@ -25,6 +25,26 @@ function tone(freq, start, dur, { type = 'square', vol = 0.05, to = null } = {})
   osc.stop(t0 + dur + 0.02);
 }
 
+// A short burst of filtered noise (for puffs and pomfs).
+function noise(start, dur, { vol = 0.08, freq = 900, to = 200 } = {}) {
+  const a = audio();
+  const t0 = a.currentTime + start;
+  const buf = a.createBuffer(1, Math.ceil(a.sampleRate * dur), a.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  const src = a.createBufferSource();
+  src.buffer = buf;
+  const filter = a.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(freq, t0);
+  filter.frequency.exponentialRampToValueAtTime(to, t0 + dur);
+  const gain = a.createGain();
+  gain.gain.setValueAtTime(vol, t0);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  src.connect(filter).connect(gain).connect(a.destination);
+  src.start(t0);
+}
+
 export const sfx = {
   eat() {
     if (muted) return;
@@ -92,6 +112,13 @@ export const sfx = {
   clear() {
     if (muted) return;
     [784, 988, 1175, 1568].forEach((f, i) => tone(f, i * 0.055, 0.08, { type: 'triangle', vol: 0.05 }));
+  },
+  // Mine goes off: a soft, muffled pomf with a little low thump, then a sad slide.
+  boom() {
+    if (muted) return;
+    noise(0, 0.45, { vol: 0.12, freq: 1100, to: 140 });
+    tone(140, 0, 0.22, { type: 'triangle', vol: 0.1, to: 45 });
+    tone(330, 0.28, 0.35, { type: 'sawtooth', vol: 0.025, to: 90 });
   },
   start() {
     if (muted) return;

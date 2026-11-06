@@ -120,3 +120,80 @@ export function drawConfetti(ctx, pieces, ms, cell) {
   }
   ctx.globalAlpha = 1;
 }
+
+// Mines mode death: a soft "pomf" rather than a big bang. A brief warm flash, a
+// ring of light spreading out, a few embers arcing away, and grey smoke puffs
+// that swell, drift up and sway, and fade. (cx, cy) is the blast centre in cell units.
+export const BLAST_MS = 1700;
+const EMBER_COLORS = ['#FFD34D', '#FFA94D', '#FF7A4D', '#FFF4C2'];
+
+export function makeBlast(cx, cy, rng = Math.random) {
+  const embers = Array.from({ length: 8 }, (_, k) => {
+    const a = (k / 8) * Math.PI * 2 + rng() * 0.5;
+    const speed = 1.6 + rng() * 1.2;
+    return {
+      vx: Math.cos(a) * speed, vy: Math.sin(a) * speed - 1.2,
+      life: 450 + rng() * 300, color: EMBER_COLORS[k % EMBER_COLORS.length],
+    };
+  });
+  const smoke = Array.from({ length: 9 }, () => ({
+    x: cx + (rng() - 0.5) * 1.1,
+    y: cy + (rng() - 0.5) * 0.8,
+    delay: 40 + rng() * 220,
+    rise: 0.45 + rng() * 0.35, // cells/s
+    sway: 0.08 + rng() * 0.1,
+    phase: rng() * Math.PI * 2,
+    life: 900 + rng() * (BLAST_MS - 1100),
+    shade: rng() < 0.5 ? '#9A938E' : '#B7B0AA',
+  }));
+  return { cx, cy, embers, smoke };
+}
+
+export function drawBlast(ctx, blast, ms, cell) {
+  const { cx, cy } = blast;
+  const u = Math.max(2, Math.round(cell * 0.07));
+  const sq = (x, y, s, color, alpha) => {
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    ctx.fillRect(Math.round(x * cell - s / 2), Math.round(y * cell - s / 2), s, s);
+  };
+
+  // Flash: a soft disc of warm light, gone in a blink.
+  if (ms < 220) {
+    const k = ms / 220;
+    const r = cell * (0.55 + 0.6 * k);
+    ctx.globalAlpha = 0.45 * (1 - k);
+    ctx.fillStyle = '#FFE9A8';
+    ctx.beginPath();
+    ctx.arc(cx * cell, cy * cell, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Ring of pixel dots spreading out and fading.
+  if (ms < 520) {
+    const k = ms / 520;
+    const r = 0.35 + 1.45 * (1 - (1 - k) ** 2);
+    for (let i = 0; i < 18; i++) {
+      const a = (i / 18) * Math.PI * 2;
+      sq(cx + Math.cos(a) * r, cy + Math.sin(a) * r, u, '#FFC46B', 0.8 * (1 - k));
+    }
+  }
+  // Embers: arc outward, droop, and wink out.
+  const s = ms / 1000;
+  for (const e of blast.embers) {
+    const age = ms / e.life;
+    if (age >= 1) continue;
+    const twinkle = age > 0.6 && Math.floor(ms / 70) % 2 ? 0.5 : 1;
+    sq(cx + e.vx * s * (1 - 0.4 * age), cy + e.vy * s + 2.2 * s * s, u, e.color, (1 - age) * twinkle);
+  }
+  // Smoke: little puffs that swell as they rise, then thin away.
+  for (const p of blast.smoke) {
+    const t = ms - p.delay;
+    if (t < 0 || t >= p.life) continue;
+    const k = t / p.life;
+    const x = p.x + p.sway * Math.sin(t / 260 + p.phase);
+    const y = p.y - p.rise * (t / 1000);
+    const size = Math.round(u * (2.6 + 3 * k));
+    sq(x, y, size, p.shade, 0.65 * (k < 0.2 ? k / 0.2 : 1 - (k - 0.2) / 0.8));
+  }
+  ctx.globalAlpha = 1;
+}

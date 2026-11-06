@@ -7,13 +7,13 @@ import {
   sizeCanvas, drawBoard, drawSnake, drawSnakePath, interpolateSnake, snakePoints, drawWall, drawWings, drawFruit, drawSprite, drawCrown, drawScene, setBoardColors, setSnakeSkin,
   drawBox, drawTarget, drawPoisonBubbles, isPurpleFruit, drawMineField, drawFlag, PALETTE,
 } from './render.js';
-import { THEMES, SKINS, DEFAULT_THEME, DEFAULT_SKIN, THEME_ICONS, shade, boardAccent } from './themes.js';
+import { THEMES, SKINS, DEFAULT_THEME, DEFAULT_SKIN, THEME_ICONS, shade, mix, boardAccent } from './themes.js';
 import { FRUITS, DEFAULT_FRUIT, BASKET } from './fruits.js';
 import {
   BUNNY, TURTLE, WALL_ICON, PORTAL_ICON, YINYANG_ICON, MAGNET_ICON, BOX, MINES_ICON,
 } from './critters.js';
 import {
-  makeFireworks, drawFireworks, drawDizzyStars, makeConfetti, drawConfetti, CONFETTI_MS,
+  makeFireworks, drawFireworks, drawDizzyStars, makeConfetti, drawConfetti, CONFETTI_MS, makeBlast, drawBlast,
 } from './effects.js';
 import { sfx, isMuted, setMuted } from './sound.js';
 import { CommandRouter, matchOption, COMMANDS, loadCommandConfig } from './commands.js';
@@ -763,7 +763,8 @@ function drawGame(t) {
   }
 
   if (game.status === 'over' && endFx?.type === 'lose') {
-    drawBonk(ctx, t - endFx.t0, opts);
+    if (endFx.blast) drawExploded(ctx, t - endFx.t0, opts);
+    else drawBonk(ctx, t - endFx.t0, opts);
   } else if (game.status === 'won' && endFx?.type === 'win') {
     drawSnake(ctx, game.snake, cell, { ...opts, eyes: 'happy' });
     drawFireworks(ctx, endFx.fireworks, t - endFx.t0, cell);
@@ -824,6 +825,38 @@ function drawBonk(ctx, ms, opts) {
     const oy = Math.max(cell * 0.3, head.y * cell - cell * 0.62);
     drawDizzyStars(ctx, ox, oy, cell, ms, fade);
   }
+}
+
+// Mines mode loss: the field goes off with a soft pomf. It flushes red and fades,
+// the flag pops up and tumbles away, and the snake flinches back from the blast,
+// a little sooty and dazed, while smoke puffs drift up.
+function drawExploded(ctx, ms, opts) {
+  const b = game.blast;
+  const fade = Math.max(0, 1 - ms / 320);
+  if (fade > 0) drawMineField(ctx, b.x, b.y, cell, { visit: MINE_LIMIT, born: fade, ms: 140, limit: MINE_LIMIT }); // 140 ms: the red half of its warning blink
+
+  const pts = snakePoints(game.snake, game.jumps);
+  const h = pts[0];
+  const ax = h.x - (b.x + 0.5);
+  const ay = h.y - (b.y + 0.5);
+  const len = Math.hypot(ax, ay) || 1;
+  const jolt = ms < 280 ? Math.sin((Math.PI * ms) / 280) * 0.16 : 0;
+  const head = { x: h.x + (ax / len) * jolt, y: h.y + (ay / len) * jolt };
+  const soot = Math.min(1, ms / 160) * 0.42;
+  const base = opts.skin ?? SKINS[skinId()];
+  const skin = { ...base, stops: base.stops.map((c) => mix(c, '#2B2522', soot)) };
+  drawSnakePath(ctx, [head, ...pts], cell, { ...opts, skin, tongue: false, eyes: ms < 320 ? 'closed' : 'dizzy' });
+
+  if (ms < 950) {
+    const s = ms / 1000;
+    ctx.save();
+    ctx.globalAlpha = 1 - ms / 950;
+    ctx.translate((b.x + 0.5 + 0.7 * s) * cell, (b.y + 0.5 - 2.4 * s + 3.6 * s * s) * cell);
+    ctx.rotate(s * 4.5);
+    drawFlag(ctx, -0.5, -0.5, cell, 0);
+    ctx.restore();
+  }
+  drawBlast(ctx, endFx.blast, ms, cell);
 }
 
 // Flying fruits: move them, and catch any touching the head where it's drawn.
@@ -980,8 +1013,9 @@ function onGameEnd(ev) {
   recordScore();
   const t0 = performance.now();
   if (ev === 'die') {
-    sfx.die();
-    endFx = { type: 'lose', t0 };
+    if (game.blast) sfx.boom();
+    else sfx.die();
+    endFx = { type: 'lose', t0, blast: game.blast && makeBlast(game.blast.x + 0.5, game.blast.y + 0.5) };
     deathTimer = setTimeout(() => showScreen('menu'), DEATH_TO_MENU_MS);
   } else {
     sfx.win();
