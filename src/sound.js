@@ -120,6 +120,17 @@ export const sfx = {
     tone(140, 0, 0.22, { type: 'triangle', vol: 0.1, to: 45 });
     tone(330, 0.28, 0.35, { type: 'sawtooth', vol: 0.025, to: 90 });
   },
+  // A turn: a tiny, quiet blip with its own note per direction (all from one
+  // pentatonic scale, so weaving around plays a little tune). Each one chirps
+  // the way it's heading: up and right lift, down and left dip.
+  turn(dir) {
+    if (muted) return;
+    const [f, to] = {
+      up: [880, 990], right: [784, 860], left: [659, 600], down: [587, 530],
+    }[dir] ?? [700, 700];
+    tone(f, 0, 0.045, { type: 'triangle', vol: 0.045, to });
+    tone(f * 2, 0, 0.025, { vol: 0.008 });
+  },
   start() {
     if (muted) return;
     tone(523, 0, 0.07);

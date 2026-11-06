@@ -945,6 +945,8 @@ function afterStep(ev, before, wallsBefore) {
   if (ev === 'portal') { sfx.portal(); updateScore(); }
   if (game.walls.length > wallsBefore) sfx.wall();
   if (ev === 'push') sfx.push();
+  // A turn the player made (poison does its own steering, quietly).
+  if (lastSnap && game.dir !== lastSnap.dir && !lastSnap.poison && ev !== 'die' && ev !== 'flip') sfx.turn(game.dir);
   if (ev === 'release' || ev === 'bump') {
     // The box that's gone (in the snapshot, not on the board any more).
     const now = performance.now();

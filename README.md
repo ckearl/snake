@@ -61,7 +61,7 @@ your own settings come back. A toast credits the viewer for each action. With `?
 - `src/commands.js` — chat command parsing, option matching, cooldowns.
 - `src/chat.js` — anonymous read-only Twitch chat (IRC over WebSocket).
 - `src/render.js` — canvas drawing: board, snake, orange/crown sprites, menu scene.
-- `src/sound.js` — WebAudio blips (eat / die / start / win jingle), mute persisted.
+- `src/sound.js` — WebAudio blips (eat / die / start / win jingle, a note per turn direction, mode sounds), mute persisted.
 - `src/effects.js` — win fireworks, dizzy stars for the loss bonk, confetti for a cleared mine field, the blast when one goes off.
 - Tests: `test/game.test.js` (rules), `test/modes.test.js` (walls/portals), `test/box.test.js` (box mode), `test/poison.test.js` (poison mode), `test/mines.test.js` (mines mode), `test/render.test.js` (smooth movement), `test/actions.test.js` (chat actions), `test/commands.test.js` (commands + IRC parsing).
 - `src/main.js` — screens (menu, settings, play), input, game loop, layout.
