@@ -92,6 +92,7 @@ let game = null;
 let screen = 'menu'; // menu | settings | play
 let lastScore = 0;
 let startBest = 0; // the high score for this game's mode when it began
+let recordShown = false; // this game has already had its new-record moment
 let cell = 32;
 let boardCtx = null;
 let sceneCtx = null;
@@ -120,6 +121,7 @@ function newGame() {
   const { cols, rows } = BOARD_SIZES[boardSizeKey()];
   game = createGame({ cols, rows, fruitCount: FRUIT_COUNTS[active.count], mode: active.mode });
   startBest = getBest();
+  recordShown = false;
   foodBorn.clear();
   boxBorn.clear();
   boxGone = [];
@@ -199,6 +201,15 @@ function updateScore() {
   // (and stays gold until the next game).
   el.topBest.textContent = Math.max(getBest(), score);
   el.topBest.classList.toggle('new', score > startBest);
+  // The moment the old record falls: a little jingle and the crown hops.
+  if (score > startBest && startBest > 0 && !recordShown) {
+    recordShown = true;
+    sfx.record();
+    const crown = $('best-icon');
+    crown.classList.remove('record');
+    void crown.offsetWidth; // restart the animation
+    crown.classList.add('record');
+  }
 }
 
 // ---------- settings ----------

@@ -131,6 +131,12 @@ export const sfx = {
     tone(f, 0, 0.045, { type: 'triangle', vol: 0.045, to });
     tone(f * 2, 0, 0.025, { vol: 0.008 });
   },
+  // New high score: a quick bright sparkle up.
+  record() {
+    if (muted) return;
+    [1047, 1319, 1568].forEach((f, i) => tone(f, i * 0.06, 0.07, { vol: 0.035 }));
+    tone(2093, 0.18, 0.18, { type: 'triangle', vol: 0.05 });
+  },
   start() {
     if (muted) return;
     tone(523, 0, 0.07);

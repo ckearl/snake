@@ -72,7 +72,14 @@ html, body, #app, .topbar, .card, .btn { transition: background-color 0.2s; }
 }
 
 .best-icon { margin-left: 14px; }
-.top-best { transition: color 0.3s; }
+.best-icon.record { animation: crown-hop 0.5s ease-in-out; }
+@keyframes crown-hop {
+  0% { transform: translateY(0) rotate(0); }
+  40% { transform: translateY(-7px) rotate(-12deg); }
+  70% { transform: translateY(-2px) rotate(4deg); }
+  100% { transform: translateY(0) rotate(0); }
+}
+.top-best { transition: color 0.2s; }
 /* Beating the high score: the crown's number goes gold and climbs with the score. */
 .top-best.new { color: #FFD34D; }
 
