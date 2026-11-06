@@ -71,6 +71,11 @@ html, body, #app, .topbar, .card, .btn { transition: background-color 0.2s; }
   font-variant-numeric: tabular-nums;
 }
 
+.best-icon { margin-left: 14px; }
+.top-best { transition: color 0.3s; }
+/* Beating the high score: the crown's number goes gold and climbs with the score. */
+.top-best.new { color: #FFD34D; }
+
 .controls { display: flex; gap: 6px; }
 
 /* Stopwatch, centred in the top bar. Toggle with T. */

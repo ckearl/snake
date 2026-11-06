@@ -50,6 +50,7 @@ const el = {
   stream: $('stream'),
   lastScore: $('last-score'),
   bestScore: $('best-score'),
+  topBest: $('top-best'),
   scene: $('scene'),
   fullscreen: $('btn-fullscreen'),
   mute: $('btn-mute'),
@@ -63,7 +64,13 @@ const store = {
 };
 
 let sizeKey = BOARD_SIZES[store.get('snake.size')] ? store.get('snake.size') : 'medium';
-const bestKey = () => `snake.best.${sizeKey}`;
+// High scores are kept per board size and game mode.
+const bestKey = (mode = game?.mode ?? 'classic') => `snake.best.${sizeKey}.${mode}`;
+// Before scores were per mode there was one per size; it carries over as Classic's.
+for (const size of Object.keys(BOARD_SIZES)) {
+  const old = store.get(`snake.best.${size}`, null);
+  if (old !== null && store.get(`snake.best.${size}.classic`, null) === null) store.set(`snake.best.${size}.classic`, old);
+}
 
 // Chat can change the size and colours for the current round (or the next one, if
 // it happens on the menu). They're cleared once that round ends, so chat never
@@ -81,6 +88,7 @@ const getBest = () => Number(store.get(bestKey(), 0)) || 0;
 let game = null;
 let screen = 'menu'; // menu | settings | play
 let lastScore = 0;
+let startBest = 0; // the high score for this game's mode when it began
 let cell = 32;
 let boardCtx = null;
 let sceneCtx = null;
@@ -108,6 +116,7 @@ let timerText = '';
 function newGame() {
   const { cols, rows } = BOARD_SIZES[boardSizeKey()];
   game = createGame({ cols, rows, fruitCount: FRUIT_COUNTS[active.count], mode: active.mode });
+  startBest = getBest();
   foodBorn.clear();
   boxBorn.clear();
   boxGone = [];
@@ -180,7 +189,12 @@ function setHint(text, center = false, variant = null) {
 }
 
 function updateScore() {
-  el.score.textContent = game ? game.score : 0;
+  const score = game ? game.score : 0;
+  el.score.textContent = score;
+  // The best for the mode in play; climbs along with the score once it's beaten
+  // (and stays gold until the next game).
+  el.topBest.textContent = Math.max(getBest(), score);
+  el.topBest.classList.toggle('new', score > startBest);
 }
 
 // ---------- settings ----------
@@ -1422,6 +1436,7 @@ function pickSceneFruit() {
 function initIcons() {
   paintFruitIcons();
   drawCrown(sizeCanvas($('stat-crown'), 48, 48), 0, 2, 48);
+  drawCrown(sizeCanvas($('best-icon'), 30, 30), 0, 1, 30);
   sceneCtx = sizeCanvas(el.scene, SCENE_W, SCENE_H);
 }
 
