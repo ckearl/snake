@@ -138,6 +138,11 @@ svg .fill { fill: currentColor; stroke: none; }
   white-space: nowrap;
   pointer-events: none;
 }
+.pill.again { font-size: 16px; padding: 8px 16px; animation: again-in 0.4s 0.25s ease-out both; }
+@keyframes again-in {
+  from { opacity: 0; transform: translate(-50%, 6px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
 .pill.center { bottom: 50%; transform: translate(-50%, 50%); font-size: 24px; }
 .pill.win {
   color: #FFD34D;

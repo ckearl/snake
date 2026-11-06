@@ -24,6 +24,9 @@ const TOPBAR_H = 64;
 const DEATH_TO_MENU_MS = 1400; // long enough to see the bonk + dizzy eyes
 const WIN_TO_MENU_MS = 3400; // let the fireworks play out
 const BONK_MS = 220;
+// Space / Enter right after a game ends starts the next one. Ignored for this
+// long so a key already on its way down (e.g. Space to pause) doesn't count.
+const RESTART_GUARD_MS = 150;
 // Hopeful turning: a turn pressed within this fraction of a square after the head
 // passes a square's centre still turns at that square.
 const LATE_TURN_WINDOW = 0.1;
@@ -164,6 +167,7 @@ function play() {
   roundPlayed = true;
   rollRound();
   newGame();
+  setHint(null);
   showScreen('play');
   document.activeElement?.blur();
 }
@@ -186,6 +190,7 @@ function setHint(text, center = false, variant = null) {
   el.hint.textContent = text ?? '';
   el.hint.classList.toggle('center', center);
   el.hint.classList.toggle('win', variant === 'win');
+  el.hint.classList.toggle('again', variant === 'again');
 }
 
 function updateScore() {
@@ -1032,6 +1037,7 @@ function onGameEnd(ev) {
     if (game.blast) sfx.boom();
     else sfx.die();
     endFx = { type: 'lose', t0, blast: game.blast && makeBlast(game.blast.x + 0.5, game.blast.y + 0.5) };
+    setHint('Space to play again', false, 'again');
     deathTimer = setTimeout(() => showScreen('menu'), DEATH_TO_MENU_MS);
   } else {
     sfx.win();
@@ -1039,6 +1045,12 @@ function onGameEnd(ev) {
     setHint('Perfect game!', true, 'win');
     deathTimer = setTimeout(() => showScreen('menu'), WIN_TO_MENU_MS);
   }
+}
+
+// Straight into the next round from the end of the last one, skipping the menu.
+function restart() {
+  if (roundPlayed) clearChatOverrides(); // as the menu would have
+  play();
 }
 
 function pause() {
@@ -1081,6 +1093,17 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (screen !== 'play' || !game) return;
+
+  if (game.status === 'over' || game.status === 'won') {
+    const go = e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter';
+    if (go && !e.repeat && endFx && performance.now() - endFx.t0 > RESTART_GUARD_MS) {
+      e.preventDefault();
+      restart();
+    } else if (e.code === 'Escape') {
+      toMenu();
+    }
+    return;
+  }
 
   const dir = KEY_DIRS[e.code];
   if (dir) {
